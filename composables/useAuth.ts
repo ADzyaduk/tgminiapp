@@ -121,9 +121,10 @@ export function useAuth() {
   }
 
   onMounted(() => {
-    if (!user.value && !loading.value) {
-      fetchUser()
-    }
+    // Не вызываем fetchUser() в onMounted - auth listener должен обработать начальное состояние
+    // if (!user.value && !loading.value) {
+    //   fetchUser()
+    // }
   })
   
   // Clean up listener when component unmounts
