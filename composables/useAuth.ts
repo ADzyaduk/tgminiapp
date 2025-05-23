@@ -114,10 +114,10 @@ export function useAuth() {
     
     isInitialized = true
     
-    // Вызываем fetchUser при первой инициализации
-    if (process.client) {
-      fetchUser()
-    }
+    // НЕ вызываем fetchUser при инициализации - дождемся auth events
+    // if (process.client) {
+    //   fetchUser()
+    // }
   }
 
   onMounted(() => {
