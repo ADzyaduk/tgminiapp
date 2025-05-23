@@ -146,5 +146,5 @@ export function useAuth() {
     // так как это глобальное состояние
   })
 
-  return { user, isAdmin, loading, error, fetchUser, signOut }
+  return { user, isAdmin, loading, error, fetchUser, fetchUserProfile, signOut }
 }

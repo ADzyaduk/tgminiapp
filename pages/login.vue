@@ -94,20 +94,17 @@ async function handleLogin() {
     console.log('📝 User from login:', data.user?.email)
     console.log('📝 Session from login:', data.session?.user?.email)
     
+    // Используем сессию из ответа напрямую
+    if (data.session?.user) {
+      console.log('🚀 Setting user state directly from login response')
+      // Вместо ожидания auth events, устанавливаем состояние сразу
+      const { fetchUserProfile } = useAuth()
+      await fetchUserProfile(data.session.user.id)
+    }
+    
     // Проверяем localStorage сразу после логина
     console.log('💾 LocalStorage keys:', Object.keys(localStorage))
     console.log('💾 Supabase auth token:', localStorage.getItem('supabase.auth.token'))
-    
-    // Небольшая задержка и повторная проверка
-    setTimeout(async () => {
-      const { data: sessionData2 } = await supabaseClient.auth.getSession()
-      console.log('🔍 Session after 100ms:', sessionData2.session?.user?.email)
-      console.log('💾 LocalStorage after delay:', localStorage.getItem('supabase.auth.token'))
-    }, 100)
-    
-    // Проверяем сессию сразу после логина
-    const { data: sessionData } = await supabaseClient.auth.getSession()
-    console.log('🔍 Session after login:', sessionData.session?.user?.email)
     
     toast.add({ title: 'Успешный вход!', color: 'success' })
     
