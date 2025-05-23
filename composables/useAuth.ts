@@ -114,10 +114,25 @@ export function useAuth() {
     
     isInitialized = true
     
-    // НЕ вызываем fetchUser при инициализации - дождемся auth events
-    // if (process.client) {
-    //   fetchUser()
-    // }
+    // Проверяем начальную сессию при инициализации клиента
+    if (process.client) {
+      // Получаем сессию напрямую вместо getUser()
+      supabaseClient.auth.getSession().then(({ data: { session }, error }) => {
+        if (error) {
+          console.error('Error getting initial session:', error)
+          loading.value = false
+          return
+        }
+        
+        if (session?.user) {
+          console.log('Found existing session for user:', session.user.id)
+          fetchUserProfile(session.user.id)
+        } else {
+          console.log('No existing session found')
+          loading.value = false
+        }
+      })
+    }
   }
 
   onMounted(() => {
