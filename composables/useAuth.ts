@@ -108,15 +108,19 @@ export function useAuth() {
     // Проверяем начальную сессию при инициализации клиента
     if (process.client) {
       // Получаем сессию напрямую вместо getUser()
+      console.log('🔍 Checking for existing session on app init...')
       supabaseClient.auth.getSession().then(({ data: { session }, error }) => {
         if (error) {
+          console.error('❌ Error getting initial session:', error)
           loading.value = false
           return
         }
         
         if (session?.user) {
+          console.log('✅ Found existing session, user:', session.user.email)
           fetchUserProfile(session.user.id)
         } else {
+          console.log('❌ No existing session found')
           loading.value = false
         }
       })
