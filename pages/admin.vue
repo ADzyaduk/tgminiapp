@@ -21,6 +21,16 @@
       <div v-if="isLoading" class="py-32 flex flex-col items-center justify-center">
         <UProgress animation="carousel" class="w-32" />
         <p class="mt-4 text-gray-500">Загрузка панели администратора...</p>
+        <!-- Debug info -->
+        <div class="mt-4 p-4 bg-gray-100 rounded text-sm text-left">
+          <p><strong>Debug info:</strong></p>
+          <p>Local isLoading: {{ isLoading }}</p>
+          <p>Local isAdmin: {{ isAdmin }}</p>
+          <p>Auth isLoading: {{ authLoading }}</p>
+          <p>Auth isAdmin: {{ authIsAdmin }}</p>
+          <p>Auth user: {{ authUser }}</p>
+          <p>Проверьте консоль браузера для подробностей</p>
+        </div>
       </div>
       
       <!-- Access Denied -->
@@ -189,9 +199,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useToast, useSupabaseClient } from '#imports'
+import { useAuth } from '~/composables/useAuth'
 
 const supabase = useSupabaseClient()
 const toast = useToast()
+const { user: authUser, isAdmin: authIsAdmin, loading: authLoading } = useAuth()
 
 // State
 const isLoading = ref(true)
@@ -290,18 +302,35 @@ const availableUsers = computed(() => {
 // Methods
 const checkAdminAccess = async () => {
   try {
+    console.log('🔍 Checking admin access...')
     const { data: { user } }: { data: { user: any } } = await supabase.auth.getUser()
-    if (!user) throw new Error('Не авторизован')
+    console.log('👤 Current user from Supabase auth:', user)
+    
+    if (!user) {
+      console.log('❌ No user found in auth')
+      throw new Error('Не авторизован')
+    }
 
-    const { data: profile }: { data: any } = await supabase
+    console.log('🔍 Fetching profile for user ID:', user.id)
+    const { data: profile, error: profileError }: { data: any, error: any } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
+    console.log('📋 Profile query result:', { profile, error: profileError })
+
+    if (profileError) {
+      console.error('❌ Error fetching profile:', profileError)
+      throw profileError
+    }
+
+    console.log('👤 User profile role:', profile?.role)
+    console.log('🔑 Is admin?', profile?.role === 'admin')
+    
     isAdmin.value = profile?.role === 'admin'
   } catch (error: any) {
-    console.error('Ошибка проверки прав:', error)
+    console.error('❌ Error checking admin access:', error)
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось проверить права доступа',
@@ -741,13 +770,37 @@ watch(selectedBoat, (newValue) => {
 
 // Initialize
 onMounted(async () => {
+  console.log('🏁 Admin page mounted')
+  console.log('📊 Initial auth state:', { 
+    authUser: authUser.value, 
+    authIsAdmin: authIsAdmin.value, 
+    authLoading: authLoading.value 
+  })
+  
   await checkAdminAccess()
-  if (isAdmin.value) {
+  
+  console.log('🔄 After checkAdminAccess:', { 
+    localIsAdmin: isAdmin.value, 
+    authIsAdmin: authIsAdmin.value 
+  })
+  
+  // Если useAuth показывает, что пользователь админ, используем это значение
+  if (authIsAdmin.value && !isAdmin.value) {
+    console.log('✅ Using auth composable admin status')
+    isAdmin.value = true
+  }
+  
+  if (isAdmin.value || authIsAdmin.value) {
+    console.log('👑 User is admin, loading data...')
     await Promise.all([loadUsers(), loadBoats()])
     // Проверяем разрешения после загрузки данных
     await checkPermissions()
+  } else {
+    console.log('❌ User is not admin')
   }
+  
   isLoading.value = false
+  console.log('✅ Admin page initialization complete')
 })
 </script>
 
