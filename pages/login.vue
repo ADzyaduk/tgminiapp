@@ -87,14 +87,14 @@ async function handleLogin() {
     // Обновляем состояние пользователя
     await fetchUser()
     
-    toast.add({ title: 'Успешный вход!', color: 'green' })
+    toast.add({ title: 'Успешный вход!', color: 'success' })
     
     // Добавляем небольшую задержку перед редиректом
     setTimeout(() => {
       router.push('/')
     }, 300)
   } catch (err: any) {
-    toast.add({ title: 'Ошибка входа', description: err.message, color: 'red' })
+    toast.add({ title: 'Ошибка входа', description: err.message, color: 'error' })
   } finally {
     loading.value = false
   }
