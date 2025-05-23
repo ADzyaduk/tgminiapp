@@ -90,24 +90,14 @@ const loadBoats = async () => {
   try {
     const { data, error } = await $supabase
       .from('boats')
-      .select('id, name')
-      .order('name', { ascending: true })
+      .select('*')
+      .order('created_at', { ascending: false })
     
     if (error) throw error
     
-    boats.value = (data || []).map(boat => ({
-      value: boat.id,
-      label: boat.name
-    }))
-    
-    console.log('Загружены лодки:', boats.value)
+    boats.value = data || []
   } catch (error) {
-    console.error('Ошибка загрузки лодок:', error)
-    toast.add({
-      title: 'Ошибка',
-      description: 'Не удалось загрузить список лодок',
-      color: 'error'
-    })
+    console.error('Ошибка при загрузке лодок:', error)
   }
 }
 
@@ -115,24 +105,14 @@ const loadUsers = async () => {
   try {
     const { data, error } = await $supabase
       .from('profiles')
-      .select('id, email, name, phone, role')
+      .select('*')
+      .order('created_at', { ascending: false })
     
     if (error) throw error
     
-    // Фильтруем пользователей, исключая текущего и админов
-    users.value = (data || []).filter(user => 
-      user.id !== currentUser.value?.id && 
-      user.role !== 'admin'
-    )
-    
-    console.log('Загружены пользователи:', users.value)
+    users.value = data || []
   } catch (error) {
-    console.error('Ошибка загрузки пользователей:', error)
-    toast.add({
-      title: 'Ошибка',
-      description: 'Не удалось загрузить список пользователей',
-      color: 'error'
-    })
+    console.error('Ошибка при загрузке пользователей:', error)
   }
 }
 

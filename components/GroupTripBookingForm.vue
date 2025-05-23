@@ -29,7 +29,7 @@
               </h4>
               
               <UBadge color="success" variant="subtle">
-                {{ trip.available_seats }} из {{ trip.total_seats }} мест свободно
+                осталось {{ trip.available_seats }} мест
               </UBadge>
             </div>
           </div>

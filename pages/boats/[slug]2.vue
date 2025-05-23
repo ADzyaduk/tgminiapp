@@ -100,11 +100,9 @@ const checkAuth = async () => {
 
       user.value = profile
       isAdmin.value = profile.role === 'admin'
-      console.log('Профиль пользователя:', profile)
     } else {
       user.value = null
       isAdmin.value = false
-      console.log('Пользователь не авторизован')
     }
   } catch (err: any) {
     console.error('Ошибка проверки авторизации:', err)
@@ -125,7 +123,6 @@ const fetchBoat = async () => {
 
     if (error || !data) throw error || new Error('Лодка не найдена')
     boat.value = data
-    console.log('Данные лодки:', data)
   } catch (err: any) {
     console.error('Ошибка загрузки лодки:', err)
     toast.add({ title: 'Ошибка', description: err.message, color: 'red' })
@@ -181,9 +178,38 @@ const handleBookingCreated = () => {
   fetchBoat()
 }
 
+// Получение профиля пользователя
+const getProfile = async () => {
+  if (!user.value?.id) return null
+  
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.value.id)
+      .single()
+    
+    if (error) {
+      throw error
+    }
+    
+    return profile
+  } catch (error) {
+    return null
+  }
+}
+
 onMounted(async () => {
   await checkAuth()
   await fetchBoat()
+  
+  if (user.value && boat.value) {
+    // Проверяем права менеджера
+    const { isManager } = useManager(
+      computed(() => user.value?.id ?? null),
+      computed(() => boat.value?.id ?? null)
+    )
+  }
 })
 
 definePageMeta({

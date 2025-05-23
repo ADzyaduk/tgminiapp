@@ -221,37 +221,17 @@ export const useGroupTrips = () => {
    * Listen for real-time updates to group trips
    */
   const subscribeToTrips = () => {
-    const subscription = supabaseClient
-      .channel('group_trips_changes')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'group_trips' 
-      }, payload => {
-        console.log('Real-time update:', payload)
-        
-        // Handle different events
-        if (payload.eventType === 'INSERT') {
-          groupTrips.value = [...groupTrips.value, payload.new]
-        } 
-        else if (payload.eventType === 'UPDATE') {
-          const index = groupTrips.value.findIndex(trip => trip.id === payload.new.id)
-          if (index !== -1) {
-            groupTrips.value[index] = payload.new
-            groupTrips.value = [...groupTrips.value] // Create new array to trigger reactivity
-          }
-        }
-        else if (payload.eventType === 'DELETE') {
-          groupTrips.value = groupTrips.value.filter(trip => trip.id !== payload.old.id)
-        }
-        
-        lastUpdated.value = new Date()
+    const channel = supabaseClient
+      .channel('group_trips_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_trips' }, (payload) => {
+        // Обрабатываем real-time обновления
+        handleRealtimeUpdate(payload)
       })
       .subscribe()
     
     // Return function to unsubscribe
     return () => {
-      subscription.unsubscribe()
+      channel.unsubscribe()
     }
   }
   

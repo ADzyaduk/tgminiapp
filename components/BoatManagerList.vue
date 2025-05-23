@@ -143,55 +143,36 @@ const isRemoving = ref(false)
 
 // Load managers for the boat
 const loadManagers = async () => {
+  if (!props.boatId) return
+  
   try {
     loading.value = true
-    console.log('Загрузка менеджеров для лодки:', props.boatId)
     
-    // Простой подход: получить всех менеджеров для этой лодки с профилями
+    // Получаем список менеджеров для лодки
     const { data, error } = await $supabase
       .from('boat_managers')
-      .select('id, boat_id, user_id, created_at')
+      .select('user_id')
       .eq('boat_id', props.boatId)
     
-    if (error) {
-      console.error('Ошибка запроса менеджеров:', error)
-      throw error
-    }
+    if (error) throw error
     
-    console.log('Получены менеджеры:', data)
-    
-    // Если у нас есть менеджеры, загрузим для них профили
-    if (data && data.length > 0) {
-      // Получить список ID пользователей
-      const userIds = data.map(manager => manager.user_id)
-      
-      // Получить профили этих пользователей
-      const { data: profilesData, error: profilesError } = await $supabase
-        .from('profiles')
-        .select('id, email, name, phone, role')
-        .in('id', userIds)
-      
-      if (profilesError) {
-        console.error('Ошибка загрузки профилей:', profilesError)
-        throw profilesError
-      }
-      
-      console.log('Загружены профили:', profilesData)
-      
-      // Соединяем данные менеджеров с их профилями
-      const managersWithProfiles = data.map(manager => {
-        const profile = profilesData.find(p => p.id === manager.user_id)
-        return { ...manager, profiles: profile }
-      })
-      
-      managers.value = managersWithProfiles
-    } else {
+    if (!data || data.length === 0) {
       managers.value = []
+      return
     }
     
-    console.log('Итоговый список менеджеров:', managers.value)
+    // Получаем профили менеджеров
+    const userIds = data.map(item => item.user_id)
+    const { data: profilesData, error: profilesError } = await $supabase
+      .from('profiles')
+      .select('id, name, email, avatar')
+      .in('id', userIds)
+    
+    if (profilesError) throw profilesError
+    
+    managers.value = profilesData || []
   } catch (error) {
-    console.error('Error loading managers:', error)
+    console.error('Ошибка при загрузке менеджеров:', error)
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось загрузить список менеджеров',

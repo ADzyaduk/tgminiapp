@@ -78,6 +78,8 @@ export function useAuth() {
       await supabaseClient.auth.signOut()
       user.value = null
       isAdmin.value = false
+      // Очищаем localStorage
+      localStorage.removeItem('supabase.auth.token')
       router.replace('/login')
     } catch (e: any) {
       error.value = e.message
@@ -89,16 +91,14 @@ export function useAuth() {
   // Инициализируем auth listener только один раз
   if (!isInitialized) {
     authListener = supabaseClient.auth.onAuthStateChange((event, session) => {
-      console.log('🔄 Auth state change:', event, session?.user?.email)
       if (event === 'SIGNED_OUT') {
         user.value = null
         isAdmin.value = false
+        // Очищаем localStorage при выходе
+        localStorage.removeItem('supabase.auth.token')
       } else if (event === 'SIGNED_IN' && session?.user) {
-        // Используем user из session напрямую, без дополнительного getUser() вызова
-        console.log('✅ Using session from auth event:', session.user.email)
         fetchUserProfile(session.user.id)
       } else if (event === 'TOKEN_REFRESHED') {
-        // Для TOKEN_REFRESHED используем обычный fetchUser
         setTimeout(() => {
           fetchUser()
         }, 100)
@@ -109,36 +109,26 @@ export function useAuth() {
     
     // Проверяем начальную сессию при инициализации клиента
     if (process.client) {
-      // Получаем сессию напрямую вместо getUser()
-      console.log('🔍 Checking for existing session on app init...')
       supabaseClient.auth.getSession().then(({ data: { session }, error }) => {
-        console.log('🔍 getSession result:', { session: session?.user?.email, error })
         if (error) {
-          console.error('❌ Error getting initial session:', error)
           loading.value = false
           return
         }
         
         if (session?.user) {
-          console.log('✅ Found existing session, user:', session.user.email)
           fetchUserProfile(session.user.id)
         } else {
-          console.log('❌ No existing session found')
-          // Попробуем проверить localStorage напрямую
+          // Пытаемся восстановить сессию из localStorage
           const stored = localStorage.getItem('supabase.auth.token')
-          console.log('💾 localStorage token:', stored ? 'exists' : 'missing')
           
-          // Если есть токен в localStorage, попробуем восстановить сессию
           if (stored) {
             try {
               const tokenData = JSON.parse(stored)
               if (tokenData.user && tokenData.access_token) {
-                console.log('🔄 Restoring session from localStorage:', tokenData.user.email)
                 fetchUserProfile(tokenData.user.id)
                 return
               }
             } catch (e) {
-              console.error('❌ Error parsing stored token:', e)
               localStorage.removeItem('supabase.auth.token')
             }
           }

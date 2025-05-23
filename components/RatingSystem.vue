@@ -329,11 +329,16 @@ const checkUserReview = async () => {
       .select('id')
       .eq('boat_id', props.boatId)
       .eq('user_id', user.value.id)
-      .single()
     
-    hasSubmittedReview.value = !!data
+    if (error) {
+      console.error('Error checking user review:', error)
+      hasSubmittedReview.value = false
+      return
+    }
+    
+    hasSubmittedReview.value = data && data.length > 0
   } catch (err) {
-    // Если отзыв не найден, ошибка будет поймана здесь
+    console.error('Error checking user review:', err)
     hasSubmittedReview.value = false
   }
 }

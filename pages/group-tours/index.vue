@@ -175,7 +175,6 @@ const loadUserBookings = async () => {
     if (error) throw error
     
     userBookings.value = data || []
-    console.log('Загружены бронирования пользователя:', userBookings.value)
   } catch (error) {
     console.error('Error loading user bookings:', error)
     toast.add({

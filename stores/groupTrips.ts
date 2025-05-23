@@ -236,32 +236,9 @@ export const useGroupTripsStore = defineStore('groupTrips', {
           event: '*', 
           schema: 'public', 
           table: 'group_trips' 
-        }, payload => {
-          console.log('Real-time update:', payload)
-          
-          // Обрабатываем разные типы событий
-          if (payload.eventType === 'INSERT') {
-            // Для новых записей нам нужно загрузить информацию о лодке
-            this.loadTripWithBoatInfo(payload.new.id).then(trip => {
-              if (trip) {
-                this.trips.push(trip)
-                this.lastUpdated = new Date()
-              }
-            })
-          } 
-          else if (payload.eventType === 'UPDATE') {
-            const index = this.trips.findIndex(trip => trip.id === payload.new.id)
-            if (index !== -1) {
-              // Сохраняем информацию о лодке из существующей записи
-              payload.new.boat = this.trips[index].boat
-              this.trips[index] = payload.new
-              this.lastUpdated = new Date()
-            }
-          }
-          else if (payload.eventType === 'DELETE') {
-            this.trips = this.trips.filter(trip => trip.id !== payload.old.id)
-            this.lastUpdated = new Date()
-          }
+        }, (payload) => {
+          // Real-time обновления групповых поездок
+          this.handleRealTimeUpdate(payload)
         })
         .subscribe()
       

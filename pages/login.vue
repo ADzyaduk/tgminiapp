@@ -76,11 +76,6 @@ async function handleLogin() {
     return
   }
 
-  // Проверяем конфигурацию Supabase
-  const config = useRuntimeConfig()
-  console.log('🔧 Supabase URL:', config.public.supabaseUrl?.substring(0, 30) + '...')
-  console.log('🔧 Supabase Key:', config.public.supabaseAnonKey?.substring(0, 20) + '...')
-
   loading.value = true
   try {
     const { data, error } = await supabaseClient.auth.signInWithPassword({
@@ -90,17 +85,10 @@ async function handleLogin() {
     
     if (error) throw error
     
-    console.log('📝 Login response data:', data)
-    console.log('📝 User from login:', data.user?.email)
-    console.log('📝 Session from login:', data.session?.user?.email)
-    
     // Используем сессию из ответа напрямую
     if (data.session?.user) {
-      console.log('🚀 Setting user state directly from login response')
-      
       // Вручную сохраняем токен если Supabase не сохранил автоматически
       if (!localStorage.getItem('supabase.auth.token') && data.session) {
-        console.log('💾 Manually saving session to localStorage')
         localStorage.setItem('supabase.auth.token', JSON.stringify({
           access_token: data.session.access_token,
           refresh_token: data.session.refresh_token,
@@ -109,14 +97,10 @@ async function handleLogin() {
         }))
       }
       
-      // Вместо ожидания auth events, устанавливаем состояние сразу
+      // Устанавливаем состояние пользователя сразу
       const { fetchUserProfile } = useAuth()
       await fetchUserProfile(data.session.user.id)
     }
-    
-    // Проверяем localStorage сразу после логина
-    console.log('💾 LocalStorage keys:', Object.keys(localStorage))
-    console.log('💾 Supabase auth token:', localStorage.getItem('supabase.auth.token'))
     
     toast.add({ title: 'Успешный вход!', color: 'success' })
     

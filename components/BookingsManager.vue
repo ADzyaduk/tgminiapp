@@ -170,7 +170,6 @@ async function loadBookings() {
 
   try {
     if (!selectedDate.value) {
-      console.warn('loadBookings: selectedDate is undefined')
       loading.value = false
       return
     }
@@ -178,8 +177,6 @@ async function loadBookings() {
     const js = selectedDate.value.toDate('UTC')
     const dayStart = new Date(js); dayStart.setUTCHours(0,0,0,0)
     const dayEnd = new Date(js); dayEnd.setUTCHours(23,59,59,999)
-
-    console.log('Поиск бронирований на диапазон:', dayStart.toISOString(), 'по', dayEnd.toISOString())
 
     // Ищем бронирования, где:
     // 1. Начало бронирования до конца дня И
@@ -197,7 +194,6 @@ async function loadBookings() {
       bookings.value = []
       toast.error('Не удалось загрузить бронирования')
     } else {
-      console.log('Загружено бронирований:', data?.length, data)
       bookings.value = data as Booking[]
     }
   } catch (e) {
@@ -275,6 +271,36 @@ onMounted(() => {
   
   loadBookings()
 })
+
+const searchBookings = async (startDate, endDate) => {
+  try {
+    const dayStart = new Date(startDate)
+    dayStart.setHours(0, 0, 0, 0)
+    
+    const dayEnd = new Date(endDate)
+    dayEnd.setHours(23, 59, 59, 999)
+    
+    const { data, error } = await supabase
+      .from('bookings')
+      .select(`
+        id, start_time, end_time, status, created_at,
+        profiles:user_id (
+          id, name, email, phone
+        )
+      `)
+      .eq('boat_id', props.boatId)
+      .gte('start_time', dayStart.toISOString())
+      .lte('start_time', dayEnd.toISOString())
+      .order('start_time', { ascending: true })
+    
+    if (error) throw error
+    
+    return data || []
+  } catch (error) {
+    console.error('Ошибка поиска бронирований:', error)
+    return []
+  }
+}
 </script>
 
 <style scoped>

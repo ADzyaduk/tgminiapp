@@ -50,7 +50,7 @@
                     
                     <div class="mt-2 flex flex-wrap gap-2">
                       <UBadge color="primary" variant="subtle">
-                        {{ trip.available_seats }} / {{ trip.total_seats }} свободных мест
+                        осталось {{ trip.available_seats }} мест
                       </UBadge>
                       <UBadge color="success" variant="subtle">
                         Взрослый: {{ formatPrice(trip.adult_price) }}
@@ -79,15 +79,52 @@
                         >
                           Отправить
                         </UButton>
-                        <UButton
-                          color="blue"
-                          variant="soft"
-                          icon="i-heroicons-pencil"
-                          size="sm"
-                          @click.stop="updateSeats(trip)"
-                        >
-                          Места
-                        </UButton>
+                        <!-- Inline редактирование мест -->
+                        <div v-if="isManagerForBoat(trip.boat_id)" class="flex items-center gap-2">
+                          <UButtonGroup size="sm">
+                            <UButton
+                              color="gray"
+                              variant="soft"
+                              icon="i-heroicons-minus"
+                              @click.stop="adjustSeats(trip, -1)"
+                              :disabled="editingSeats[trip.id] ? editingSeats[trip.id].current <= 0 : trip.available_seats <= 0"
+                            />
+                            <UInput
+                              :model-value="editingSeats[trip.id] ? editingSeats[trip.id].current : trip.available_seats"
+                              readonly
+                              class="w-16 text-center"
+                              :class="hasUnsavedChanges(trip) ? 'ring-2 ring-yellow-400' : ''"
+                              size="sm"
+                            />
+                            <UButton
+                              color="gray"
+                              variant="soft"
+                              icon="i-heroicons-plus"
+                              @click.stop="adjustSeats(trip, 1)"
+                              :disabled="editingSeats[trip.id] ? editingSeats[trip.id].current >= trip.total_seats : trip.available_seats >= trip.total_seats"
+                            />
+                          </UButtonGroup>
+                          
+                          <!-- Кнопки сохранения/отмены (показываются только при изменениях) -->
+                          <div v-if="hasUnsavedChanges(trip)" class="flex gap-1">
+                            <UButton
+                              color="green"
+                              variant="soft"
+                              icon="i-heroicons-check"
+                              size="xs"
+                              @click.stop="saveSeats(trip)"
+                              title="Сохранить изменения"
+                            />
+                            <UButton
+                              color="red"
+                              variant="soft"
+                              icon="i-heroicons-x-mark"
+                              size="xs"
+                              @click.stop="cancelEditingSeats(trip.id)"
+                              title="Отменить изменения"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -164,6 +201,9 @@ const isBookingModalOpen = ref(false)
 const selectedTrip = ref(null)
 const boatRatings = ref({})
 const boatReviews = ref({})
+
+// Стейт для редактирования мест
+const editingSeats = ref({})
 
 // Загрузка рейтингов из отзывов
 const loadBoatReviews = async () => {
@@ -305,7 +345,7 @@ const getGroupStatusText = (trip) => {
   if (filledPercentage >= 90) {
     return 'Группа почти собрана';
   } else if (filledPercentage >= 60) {
-    return 'Много людей в группе';
+    return 'скоро отправление';
   } else if (filledPercentage >= 30) {
     return 'Группа собирается';
   } else {
@@ -359,42 +399,53 @@ const startTrip = async (trip) => {
   }
 }
 
-const updateSeats = async (trip) => {
-  const newSeats = prompt(`Введите количество свободных мест (максимум ${trip.total_seats}):`, trip.available_seats)
-  if (newSeats === null) return // User cancelled
-  
-  const seatsValue = parseInt(newSeats)
-  if (isNaN(seatsValue)) {
-    toast.add({
-      title: 'Ошибка',
-      description: 'Введите корректное число',
-      color: 'error'
-    })
-    return
+// Инициализация редактирования мест для поездки
+const startEditingSeats = (trip) => {
+  editingSeats.value[trip.id] = {
+    original: trip.available_seats,
+    current: trip.available_seats,
+    isEditing: true
+  }
+}
+
+// Изменение локального значения мест
+const adjustSeats = (trip, delta) => {
+  if (!editingSeats.value[trip.id]) {
+    startEditingSeats(trip)
   }
   
-  if (seatsValue < 0 || seatsValue > trip.total_seats) {
-    toast.add({
-      title: 'Ошибка',
-      description: `Количество мест должно быть от 0 до ${trip.total_seats}`,
-      color: 'error'
-    })
+  const newValue = editingSeats.value[trip.id].current + delta
+  if (newValue >= 0 && newValue <= trip.total_seats) {
+    editingSeats.value[trip.id].current = newValue
+  }
+}
+
+// Отмена редактирования
+const cancelEditingSeats = (tripId) => {
+  delete editingSeats.value[tripId]
+}
+
+// Сохранение изменений мест
+const saveSeats = async (trip) => {
+  const editing = editingSeats.value[trip.id]
+  if (!editing || editing.current === editing.original) {
+    cancelEditingSeats(trip.id)
     return
   }
-  
-  // Skip if unchanged
-  if (seatsValue === trip.available_seats) return
   
   try {
-    const { error } = await groupTripsStore.updateTripSeats(trip.id, seatsValue)
+    const { error } = await groupTripsStore.updateTripSeats(trip.id, editing.current)
     
     if (error) throw error
     
     toast.add({
       title: 'Успешно',
-      description: 'Количество мест обновлено',
+      description: `Количество мест изменено на ${editing.current}`,
       color: 'success'
     })
+    
+    // Очищаем состояние редактирования
+    cancelEditingSeats(trip.id)
     
     // Обновить список поездок
     await loadBookableTrips()
@@ -406,6 +457,12 @@ const updateSeats = async (trip) => {
       color: 'error'
     })
   }
+}
+
+// Проверка есть ли несохраненные изменения
+const hasUnsavedChanges = (trip) => {
+  const editing = editingSeats.value[trip.id]
+  return editing && editing.current !== editing.original
 }
 
 // Load trips on mount and ratings
