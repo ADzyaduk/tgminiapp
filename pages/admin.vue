@@ -201,6 +201,12 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useToast, useSupabaseClient } from '#imports'
 import { useAuth } from '~/composables/useAuth'
 
+// Защита страницы - требуется авторизация
+definePageMeta({
+  layout: 'default',
+  middleware: 'auth'
+})
+
 const supabase = useSupabaseClient()
 const toast = useToast()
 const { user: authUser, isAdmin: authIsAdmin, loading: authLoading } = useAuth()
@@ -307,8 +313,10 @@ const checkAdminAccess = async () => {
     console.log('👤 Current user from Supabase auth:', user)
     
     if (!user) {
-      console.log('❌ No user found in auth')
-      throw new Error('Не авторизован')
+      console.log('❌ No user found in auth - redirecting to login')
+      // Если пользователь не авторизован, редиректим на логин
+      await navigateTo('/login')
+      return
     }
 
     console.log('🔍 Fetching profile for user ID:', user.id)
@@ -331,6 +339,13 @@ const checkAdminAccess = async () => {
     isAdmin.value = profile?.role === 'admin'
   } catch (error: any) {
     console.error('❌ Error checking admin access:', error)
+    
+    // Если ошибка связана с авторизацией, редиректим на логин
+    if (error.message === 'Не авторизован' || error.message?.includes('auth')) {
+      await navigateTo('/login')
+      return
+    }
+    
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось проверить права доступа',
@@ -777,15 +792,40 @@ onMounted(async () => {
     authLoading: authLoading.value 
   })
   
-  await checkAdminAccess()
+  // Ждем завершения загрузки auth
+  let attempts = 0
+  while (authLoading.value && attempts < 20) {
+    console.log('⏳ Waiting for auth to load...', attempts)
+    await new Promise(resolve => setTimeout(resolve, 100))
+    attempts++
+  }
   
-  console.log('🔄 After checkAdminAccess:', { 
-    localIsAdmin: isAdmin.value, 
-    authIsAdmin: authIsAdmin.value 
+  console.log('📊 Auth state after waiting:', { 
+    authUser: authUser.value, 
+    authIsAdmin: authIsAdmin.value, 
+    authLoading: authLoading.value 
   })
   
-  // Если useAuth показывает, что пользователь админ, используем это значение
-  if (authIsAdmin.value && !isAdmin.value) {
+  // Если после ожидания пользователь все еще не загружен, проверяем вручную
+  if (!authUser.value) {
+    console.log('👀 Auth user still null, checking manually...')
+    await checkAdminAccess()
+    
+    // Если функция checkAdminAccess сделала редирект, выходим
+    if (!authUser.value && !isAdmin.value) {
+      isLoading.value = false
+      return
+    }
+  }
+  
+  console.log('🔄 After auth checks:', { 
+    localIsAdmin: isAdmin.value, 
+    authIsAdmin: authIsAdmin.value,
+    authUser: authUser.value
+  })
+  
+  // Используем значение из useAuth как приоритетное
+  if (authIsAdmin.value) {
     console.log('✅ Using auth composable admin status')
     isAdmin.value = true
   }
