@@ -21,16 +21,6 @@
       <div v-if="isLoading" class="py-32 flex flex-col items-center justify-center">
         <UProgress animation="carousel" class="w-32" />
         <p class="mt-4 text-gray-500">Загрузка панели администратора...</p>
-        <!-- Debug info -->
-        <div class="mt-4 p-4 bg-gray-100 rounded text-sm text-left">
-          <p><strong>Debug info:</strong></p>
-          <p>Local isLoading: {{ isLoading }}</p>
-          <p>Local isAdmin: {{ isAdmin }}</p>
-          <p>Auth isLoading: {{ authLoading }}</p>
-          <p>Auth isAdmin: {{ authIsAdmin }}</p>
-          <p>Auth user: {{ authUser }}</p>
-          <p>Проверьте консоль браузера для подробностей</p>
-        </div>
       </div>
       
       <!-- Access Denied -->
@@ -308,38 +298,26 @@ const availableUsers = computed(() => {
 // Methods
 const checkAdminAccess = async () => {
   try {
-    console.log('🔍 Checking admin access...')
     const { data: { user } }: { data: { user: any } } = await supabase.auth.getUser()
-    console.log('👤 Current user from Supabase auth:', user)
     
     if (!user) {
-      console.log('❌ No user found in auth - redirecting to login')
       // Если пользователь не авторизован, редиректим на логин
       await navigateTo('/login')
       return
     }
 
-    console.log('🔍 Fetching profile for user ID:', user.id)
     const { data: profile, error: profileError }: { data: any, error: any } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', user.id)
       .single()
 
-    console.log('📋 Profile query result:', { profile, error: profileError })
-
     if (profileError) {
-      console.error('❌ Error fetching profile:', profileError)
       throw profileError
     }
-
-    console.log('👤 User profile role:', profile?.role)
-    console.log('🔑 Is admin?', profile?.role === 'admin')
     
     isAdmin.value = profile?.role === 'admin'
   } catch (error: any) {
-    console.error('❌ Error checking admin access:', error)
-    
     // Если ошибка связана с авторизацией, редиректим на логин
     if (error.message === 'Не авторизован' || error.message?.includes('auth')) {
       await navigateTo('/login')
@@ -365,7 +343,6 @@ const loadUsers = async () => {
     if (error) throw error
     users.value = data
   } catch (error: any) {
-    console.error('Ошибка загрузки пользователей:', error)
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось загрузить список пользователей',
@@ -386,12 +363,8 @@ const loadBoats = async () => {
 
     if (error) throw error
     
-    console.log('Loaded boats data:', data)
-    
-    // Просто используем данные как есть
     boats.value = data || []
   } catch (error: any) {
-    console.error('Ошибка загрузки лодок:', error)
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось загрузить список лодок',
@@ -412,8 +385,6 @@ const loadCurrentManagers = async () => {
     // НЕ преобразуем в число - UUID должен остаться строкой
     const boatId = selectedBoat.value
     
-    console.log('Loading managers for boat ID:', boatId)
-    
     const { data, error }: { data: any, error: any } = await supabase
       .from('boat_managers')
       .select(`
@@ -424,10 +395,8 @@ const loadCurrentManagers = async () => {
 
     if (error) throw error
     
-    console.log('Loaded managers data:', data)
     currentManagers.value = data.map((item: any) => item.profiles)
   } catch (error: any) {
-    console.error('Ошибка загрузки менеджеров:', error)
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось загрузить список менеджеров',
@@ -442,16 +411,8 @@ const updateUserRole = async (user: User) => {
   isRoleUpdating.value = true
   updatingUserId.value = user.id
   try {
-    console.log('Начинаем обновление роли пользователя:', { 
-      id: user.id, 
-      role: user.role,
-      name: user.name,
-      email: user.email
-    })
-    
     // Получаем текущего пользователя для проверки
     const { data: { user: currentUser } }: { data: { user: any } } = await supabase.auth.getUser()
-    console.log('Текущий авторизованный пользователь:', currentUser?.id)
     
     // Проверим, имеем ли мы доступ к профилю пользователя
     const { data: userProfile, error: profileError }: { data: any, error: any } = await supabase
@@ -461,9 +422,7 @@ const updateUserRole = async (user: User) => {
       .single()
       
     if (profileError) {
-      console.error('Ошибка получения профиля:', profileError)
-    } else {
-      console.log('Текущий профиль в базе:', userProfile)
+      console.error('Error getting user profile:', profileError)
     }
     
     // Пробуем обновить профиль
@@ -478,11 +437,9 @@ const updateUserRole = async (user: User) => {
         })
         
       if (rpcError) {
-        console.error('Ошибка RPC вызова:', rpcError)
         throw rpcError
       }
       
-      console.log('Результат RPC вызова:', rpcData)
       updateResult = rpcData
     } catch (rpcErr) {
       // Если RPC не работает, попробуем прямое обновление
@@ -493,11 +450,9 @@ const updateUserRole = async (user: User) => {
         .select()
         
       if (directError) {
-        console.error('Ошибка прямого обновления:', directError)
         throw directError
       }
       
-      console.log('Результат прямого обновления:', directUpdate)
       updateResult = directUpdate
     }
 
@@ -510,8 +465,6 @@ const updateUserRole = async (user: User) => {
       color: 'success'
     })
   } catch (error: any) {
-    console.error('Ошибка обновления роли:', error)
-    
     // Восстанавливаем предыдущую роль в UI в случае ошибки
     // Это будет обработано при перезагрузке списка через loadUsers()
     await loadUsers()
@@ -529,10 +482,6 @@ const updateUserRole = async (user: User) => {
 
 const addManager = async () => {
   if (!selectedBoat.value || !selectedUser.value) {
-    console.log('Не выбрана лодка или пользователь:', {
-      selectedBoat: selectedBoat.value,
-      selectedUser: selectedUser.value
-    });
     return;
   }
 
@@ -540,12 +489,6 @@ const addManager = async () => {
   try {
     // НЕ преобразуем в число - UUID должен остаться строкой
     const boatId = selectedBoat.value
-    
-    console.log('Adding manager:', { 
-      boat_id: boatId, 
-      user_id: selectedUser.value,
-      availableUsers: availableUsers.value.map(u => ({ id: u.id, name: u.name }))
-    })
     
     const { error }: { error: any } = await supabase
       .from('boat_managers')
@@ -556,7 +499,6 @@ const addManager = async () => {
 
     if (error) throw error
 
-    console.log('Менеджер успешно добавлен, обновляем список');
     await loadCurrentManagers()
     selectedUser.value = undefined
 
@@ -566,7 +508,6 @@ const addManager = async () => {
       color: 'success'
     })
   } catch (error: any) {
-    console.error('Ошибка назначения менеджера:', error)
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось назначить менеджера',
@@ -582,11 +523,6 @@ const removeManager = async (userId: string) => {
   try {
     // НЕ преобразуем в число - UUID должен остаться строкой
     const boatId = selectedBoat.value
-    
-    console.log('Removing manager:', { 
-      boat_id: boatId, 
-      user_id: userId 
-    })
     
     const { error }: { error: any } = await supabase
       .from('boat_managers')
@@ -604,7 +540,6 @@ const removeManager = async (userId: string) => {
       color: 'success'
     })
   } catch (error: any) {
-    console.error('Ошибка удаления менеджера:', error)
     toast.add({
       title: 'Ошибка',
       description: 'Не удалось удалить менеджера',
@@ -621,11 +556,8 @@ const confirmDeleteUser = (user: User) => {
 
 const deleteUser = async (userId: string) => {
   try {
-    console.log('Начинаем удаление пользователя:', userId);
-    
     // Получаем текущего пользователя для проверки
     const { data: { user: currentUser } }: { data: { user: any } } = await supabase.auth.getUser()
-    console.log('Текущий авторизованный пользователь:', currentUser?.id)
     
     // Проверим, имеем ли мы доступ к профилю пользователя
     const { data: userProfile, error: profileError }: { data: any, error: any } = await supabase
@@ -635,39 +567,32 @@ const deleteUser = async (userId: string) => {
       .single()
       
     if (profileError) {
-      console.error('Ошибка получения профиля:', profileError)
-    } else {
-      console.log('Профиль для удаления:', userProfile)
+      console.error('Error getting user profile:', profileError)
     }
     
     let deleteSuccess = false;
     
     // 1. Remove from boat_managers
-    console.log('Удаление из boat_managers...');
     const { error: boatManagerError }: { error: any } = await supabase
       .from('boat_managers')
       .delete()
       .eq('user_id', userId)
 
     if (boatManagerError) {
-      console.error('Ошибка удаления из boat_managers:', boatManagerError);
+      console.error('Error deleting from boat_managers:', boatManagerError);
       // Не выбрасываем ошибку, продолжаем попытку удаления профиля
-    } else {
-      console.log('Успешно удалено из boat_managers');
     }
 
     // 2. Remove from profiles
-    console.log('Удаление из profiles...');
     const { error: profileDeleteError }: { error: any } = await supabase
       .from('profiles')
       .delete()
       .eq('id', userId)
 
     if (profileDeleteError) {
-      console.error('Ошибка удаления из profiles:', profileDeleteError);
+      console.error('Error deleting from profiles:', profileDeleteError);
       throw profileDeleteError;
     } else {
-      console.log('Успешно удалено из profiles');
       deleteSuccess = true;
     }
 
@@ -684,7 +609,6 @@ const deleteUser = async (userId: string) => {
     }
 
   } catch (error: any) {
-    console.error('Ошибка удаления пользователя:', error)
     toast.add({
       title: 'Ошибка',
       description: `Не удалось удалить пользователя: ${error.message || 'Неизвестная ошибка'}`,
@@ -693,88 +617,14 @@ const deleteUser = async (userId: string) => {
   }
 }
 
-// Вспомогательные методы
-const checkPermissions = async () => {
-  try {
-    // Получаем текущего пользователя
-    const { data: { user } }: { data: { user: any } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      console.error('Пользователь не авторизован')
-      return
-    }
-    
-    console.log('Проверка разрешений для пользователя:', user.id)
-    
-    // Проверяем доступ к таблице profiles
-    const { data: profile, error: profileError }: { data: any, error: any } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', user.id)
-      .single()
-      
-    if (profileError) {
-      console.error('Ошибка доступа к своему профилю:', profileError)
-    } else {
-      console.log('Доступ к своему профилю:', profile)
-    }
-    
-    // Тестовое обновление своего профиля
-    const { data: updateResult, error: updateError }: { data: any, error: any } = await supabase
-      .from('profiles')
-      .update({ role: profile.role }) // Обновляем на то же значение
-      .eq('id', user.id)
-      .select()
-      
-    if (updateError) {
-      console.error('Ошибка обновления своего профиля:', updateError)
-    } else {
-      console.log('Обновление своего профиля:', updateResult)
-    }
-    
-    // Проверяем, можем ли мы читать другие профили
-    const { data: otherProfiles, error: otherProfilesError }: { data: any, error: any } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .neq('id', user.id)
-      .limit(1)
-      
-    if (otherProfilesError) {
-      console.error('Ошибка доступа к другим профилям:', otherProfilesError)
-    } else if (otherProfiles.length > 0) {
-      console.log('Доступ к другим профилям:', otherProfiles[0])
-      
-      // Тестовое обновление другого профиля
-      const otherUserId = otherProfiles[0].id
-      const { data: otherUpdateResult, error: otherUpdateError }: { data: any, error: any } = await supabase
-        .from('profiles')
-        .update({ role: otherProfiles[0].role }) // Обновляем на то же значение
-        .eq('id', otherUserId)
-        .select()
-        
-      if (otherUpdateError) {
-        console.error('Ошибка обновления другого профиля:', otherUpdateError)
-      } else {
-        console.log('Обновление другого профиля:', otherUpdateResult)
-      }
-    }
-  } catch (error: any) {
-    console.error('Ошибка проверки разрешений:', error)
-  }
-}
-
 // Изменяем обработчик выбора лодки
 watch(selectedBoat, (newValue) => {
-  console.log('Selected boat changed to:', newValue, typeof newValue)
   if (newValue) {
     // Убеждаемся, что значение не пустое
     if (newValue === '') {
       currentManagers.value = []
       return
     }
-    
-    // Не нужно преобразовывать в число - UUID должен остаться строкой
-    console.log('Using boat ID for loading managers:', newValue)
     
     // Загружаем менеджеров для выбранной лодки
     loadCurrentManagers()
@@ -785,30 +635,15 @@ watch(selectedBoat, (newValue) => {
 
 // Initialize
 onMounted(async () => {
-  console.log('🏁 Admin page mounted')
-  console.log('📊 Initial auth state:', { 
-    authUser: authUser.value, 
-    authIsAdmin: authIsAdmin.value, 
-    authLoading: authLoading.value 
-  })
-  
   // Ждем завершения загрузки auth
   let attempts = 0
   while (authLoading.value && attempts < 20) {
-    console.log('⏳ Waiting for auth to load...', attempts)
     await new Promise(resolve => setTimeout(resolve, 100))
     attempts++
   }
   
-  console.log('📊 Auth state after waiting:', { 
-    authUser: authUser.value, 
-    authIsAdmin: authIsAdmin.value, 
-    authLoading: authLoading.value 
-  })
-  
   // Если после ожидания пользователь все еще не загружен, проверяем вручную
   if (!authUser.value) {
-    console.log('👀 Auth user still null, checking manually...')
     await checkAdminAccess()
     
     // Если функция checkAdminAccess сделала редирект, выходим
@@ -818,29 +653,16 @@ onMounted(async () => {
     }
   }
   
-  console.log('🔄 After auth checks:', { 
-    localIsAdmin: isAdmin.value, 
-    authIsAdmin: authIsAdmin.value,
-    authUser: authUser.value
-  })
-  
   // Используем значение из useAuth как приоритетное
   if (authIsAdmin.value) {
-    console.log('✅ Using auth composable admin status')
     isAdmin.value = true
   }
   
   if (isAdmin.value || authIsAdmin.value) {
-    console.log('👑 User is admin, loading data...')
     await Promise.all([loadUsers(), loadBoats()])
-    // Проверяем разрешения после загрузки данных
-    await checkPermissions()
-  } else {
-    console.log('❌ User is not admin')
   }
   
   isLoading.value = false
-  console.log('✅ Admin page initialization complete')
 })
 </script>
 
