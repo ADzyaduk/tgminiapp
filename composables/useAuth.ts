@@ -16,6 +16,45 @@ export function useAuth() {
   const router = useRouter()
   const supabaseClient = useSupabaseClient()
 
+  async function fetchUserProfile(userId: string) {
+    loading.value = true
+    error.value = null
+    try {
+      console.log('fetchUserProfile: Fetching profile for user:', userId)
+      
+      const { data: profile, error: pErr } = await supabaseClient
+        .from('profiles')
+        .select('id, email, role')
+        .eq('id', userId)
+        .single()
+        
+      console.log('fetchUserProfile: Profile query result:', { profile, error: pErr })
+      
+      if (pErr) {
+        console.error('fetchUserProfile: Profile query error:', pErr)
+        throw pErr
+      }
+      
+      if (!profile) {
+        console.log('fetchUserProfile: No profile found in database for user:', userId)
+        user.value = null
+        isAdmin.value = false
+        return
+      }
+      
+      console.log('fetchUserProfile: Setting user state:', profile)
+      user.value = profile
+      isAdmin.value = profile.role === 'admin'
+    } catch (e: any) {
+      console.error('fetchUserProfile: Error occurred:', e)
+      error.value = e.message
+      user.value = null
+      isAdmin.value = false
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function fetchUser() {
     loading.value = true
     error.value = null
@@ -29,32 +68,7 @@ export function useAuth() {
         isAdmin.value = false
         return
       } else {
-        console.log('fetchUser: Found authenticated user:', u.id, u.email)
-        console.log('fetchUser: Fetching profile from database...')
-        
-        const { data: profile, error: pErr } = await supabaseClient
-          .from('profiles')
-          .select('id, email, role')
-          .eq('id', u.id)
-          .single()
-          
-        console.log('fetchUser: Profile query result:', { profile, error: pErr })
-        
-        if (pErr) {
-          console.error('fetchUser: Profile query error:', pErr)
-          throw pErr
-        }
-        
-        if (!profile) {
-          console.log('fetchUser: No profile found in database for user:', u.id)
-          user.value = null
-          isAdmin.value = false
-          return
-        }
-        
-        console.log('fetchUser: Setting user state:', profile)
-        user.value = profile
-        isAdmin.value = profile.role === 'admin'
+        await fetchUserProfile(u.id)
       }
     } catch (e: any) {
       console.error('fetchUser: Error occurred:', e)
@@ -87,8 +101,11 @@ export function useAuth() {
       if (event === 'SIGNED_OUT') {
         user.value = null
         isAdmin.value = false
-      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        // Небольшая задержка чтобы сессия полностью установилась
+      } else if (event === 'SIGNED_IN' && session?.user) {
+        // Используем user из session напрямую, без дополнительного getUser() вызова
+        fetchUserProfile(session.user.id)
+      } else if (event === 'TOKEN_REFRESHED') {
+        // Для TOKEN_REFRESHED используем обычный fetchUser
         setTimeout(() => {
           fetchUser()
         }, 100)
