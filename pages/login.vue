@@ -58,7 +58,7 @@ interface LoginForm { email: string; password: string }
 const supabaseClient = useSupabaseClient()
 const router = useRouter()
 const toast = useToast()
-const { fetchUser } = useAuth()
+const { fetchUser, user } = useAuth()
 
 const form = ref<LoginForm>({ email: '', password: '' })
 const errors = ref<Partial<Record<keyof LoginForm, string>>>({})
@@ -78,14 +78,21 @@ async function handleLogin() {
 
   loading.value = true
   try {
-    const { error } = await supabaseClient.auth.signInWithPassword({
+    console.log('Attempting login with:', form.value.email)
+    
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
       email: form.value.email,
       password: form.value.password,
     })
+    
     if (error) throw error
+    
+    console.log('Login successful, user data:', data.user)
     
     // Обновляем состояние пользователя
     await fetchUser()
+    
+    console.log('User state after fetchUser:', user.value)
     
     toast.add({ title: 'Успешный вход!', color: 'success' })
     
@@ -94,6 +101,7 @@ async function handleLogin() {
       router.push('/')
     }, 300)
   } catch (err: any) {
+    console.error('Login error:', err)
     toast.add({ title: 'Ошибка входа', description: err.message, color: 'error' })
   } finally {
     loading.value = false
