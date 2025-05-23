@@ -20,23 +20,44 @@ export function useAuth() {
     loading.value = true
     error.value = null
     try {
+      console.log('fetchUser: Getting user from Supabase auth...')
       const { data: { user: u }, error: err } = await supabaseClient.auth.getUser()
       if (err) throw err
       if (!u) {
+        console.log('fetchUser: No authenticated user found')
         user.value = null
         isAdmin.value = false
         return
       } else {
+        console.log('fetchUser: Found authenticated user:', u.id, u.email)
+        console.log('fetchUser: Fetching profile from database...')
+        
         const { data: profile, error: pErr } = await supabaseClient
           .from('profiles')
           .select('id, email, role')
           .eq('id', u.id)
           .single()
-        if (pErr) throw pErr
+          
+        console.log('fetchUser: Profile query result:', { profile, error: pErr })
+        
+        if (pErr) {
+          console.error('fetchUser: Profile query error:', pErr)
+          throw pErr
+        }
+        
+        if (!profile) {
+          console.log('fetchUser: No profile found in database for user:', u.id)
+          user.value = null
+          isAdmin.value = false
+          return
+        }
+        
+        console.log('fetchUser: Setting user state:', profile)
         user.value = profile
         isAdmin.value = profile.role === 'admin'
       }
     } catch (e: any) {
+      console.error('fetchUser: Error occurred:', e)
       error.value = e.message
       user.value = null
       isAdmin.value = false
