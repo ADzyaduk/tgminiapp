@@ -43,10 +43,10 @@
       
       <!-- Admin Panel -->
       <div v-else>
-        <UTabs :items="tabs" class="mb-6">
-          <!-- Users Tab -->
-          <template #users>
-            <div class="space-y-6">
+        <UTabs v-model="activeTabValue" :items="tabItems" class="mb-6">
+          <template #content="{ item }">
+            <!-- Users Tab -->
+            <div v-if="item.value === 'users'" class="space-y-6">
               <!-- User List -->
               <UCard>
                 <template #header>
@@ -104,11 +104,9 @@
                 </div>
               </UCard>
             </div>
-          </template>
 
-          <!-- Boat Managers Tab -->
-          <template #managers>
-            <div class="space-y-6">
+            <!-- Boat Managers Tab -->
+            <div v-else-if="item.value === 'managers'" class="space-y-6">
               <!-- Boat Selection -->
               <UCard>
                 <template #header>
@@ -206,6 +204,7 @@ const updatingUserId = ref<string | null>(null)
 const userSearchQuery = ref('')
 const selectedBoat = ref<string | undefined>(undefined)
 const selectedUser = ref<string | undefined>(undefined)
+const activeTabValue = ref('users')
 
 // Data
 interface Boat {
@@ -243,6 +242,15 @@ const tabs = [
     icon: 'i-heroicons-cube'
   }
 ]
+
+// Преобразуем tabs для UTabs компонента
+const tabItems = computed(() => 
+  tabs.map(tab => ({
+    label: tab.label,
+    icon: tab.icon,
+    value: tab.slot
+  }))
+)
 
 // Computed
 const filteredUsers = computed(() => {

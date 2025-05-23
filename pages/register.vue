@@ -1,48 +1,95 @@
 <template>
-  <div class="flex min-h-screen items-center justify-center p-4">
-    <UCard class="w-full max-w-md">
+  <div class="flex min-h-screen items-center justify-center p-4 bg-gray-50 dark:bg-gray-900">
+    <UCard class="w-full max-w-md shadow-lg">
       <template #header>
-        <h1 class="text-xl font-semibold">Регистрация для агентов</h1>
-        <p class="text-sm text-gray-500 mt-1">Для регистрации необходим код приглашения</p>
+        <div class="text-center mb-4">
+          <h1 class="text-3xl font-bold text-gray-800 dark:text-white pt-4">Регистрация</h1>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Создайте новый аккаунт, чтобы начать</p>
+        </div>
       </template>
       
-      <div class="space-y-4">
-        <UAlert v-if="errorMessage" color="red" variant="soft" :description="errorMessage" class="mb-4" />
+      <div class="py-4">
+        <UAlert v-if="genericErrorMessage" color="error" variant="soft" icon="i-heroicons-exclamation-circle" :description="genericErrorMessage" class="mb-6" />
         
-        <UFormGroup label="Электронная почта" required>
-          <UInput v-model="email" type="email" placeholder="your@email.com" />
+        <UFormGroup label="Электронная почта" name="email" required :error="emailError" class="mb-6">
+          <UInput 
+            v-model="email" 
+            type="email" 
+            placeholder="your@email.com" 
+            icon="i-heroicons-envelope"
+            class="w-full mb-2"
+            size="lg" 
+            @blur="validateEmail"
+          />
         </UFormGroup>
         
-        <UFormGroup label="Пароль" required>
-          <UInput v-model="password" type="password" placeholder="Минимум 8 символов" />
+        <UFormGroup label="Пароль" name="password" required :error="passwordError">
+          <UInput 
+            v-model="password" 
+            :type="showPassword ? 'text' : 'password'" 
+            placeholder="Минимум 8 символов" 
+            icon="i-heroicons-lock-closed"
+            class="w-full mb-2"
+            size="lg"
+            @blur="validatePassword"
+          >
+            <template #trailing>
+              <UButton 
+                :icon="showPassword ? 'i-heroicons-eye-slash' : 'i-heroicons-eye'" 
+                variant="link" 
+                @click="showPassword = !showPassword" 
+                :padded="false"
+              />
+            </template>
+          </UInput>
         </UFormGroup>
         
-        <UFormGroup label="Имя" required>
-          <UInput v-model="name" placeholder="Ваше имя" />
+        <UFormGroup label="Имя" name="name" required :error="nameError">
+          <UInput 
+            v-model="name" 
+            placeholder="Ваше имя" 
+            icon="i-heroicons-user"
+            class="w-full mb-2"
+            size="lg"
+            @blur="validateName"
+          />
         </UFormGroup>
         
-        <UFormGroup label="Телефон">
-          <UInput v-model="phone" type="tel" placeholder="+7 (XXX) XXX-XX-XX" />
-        </UFormGroup>
-        
-        <UFormGroup label="Код приглашения" required>
-          <UInput v-model="inviteCode" placeholder="XXXXX-XXXXX-XXXXX" />
+        <UFormGroup label="Телефон" name="phone" :error="phoneError">
+          <UInput 
+            v-model="phone" 
+            type="tel" 
+            placeholder="(XXX) XXX-XX-XX" 
+            icon="i-heroicons-phone"
+            class="w-full mb-2"
+            size="lg"
+            @blur="validatePhone"
+          >
+            <template #leading>
+              <span class="text-gray-500">+7</span>
+            </template>
+          </UInput>
         </UFormGroup>
       </div>
       
       <template #footer>
-        <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-4 mt-4">
           <UButton 
             color="primary" 
             block 
             :loading="isLoading" 
-            :disabled="isDisabled"
-            @click="register"
+            :disabled="isSubmitDisabled"
+            @click="handleRegister"
+            size="xl"
+            class="font-semibold"
           >
             Зарегистрироваться
           </UButton>
-          <div class="text-center">
-            <UButton variant="link" to="/login">Уже есть аккаунт? Войти</UButton>
+          <div class="text-center mt-2">
+            <span class="text-sm text-gray-600 dark:text-gray-400">Уже есть аккаунт? </span>
+            <UButton variant="link" to="/login" class="text-primary-600 dark:text-primary-400 font-medium">
+              Войти
+            </UButton>
           </div>
         </div>
       </template>
@@ -52,96 +99,139 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useSupabaseClient } from '#imports'
+import { useSupabaseClient, useNuxtApp } from '#imports'
 import { useRouter } from 'vue-router'
-
-interface InviteData {
-  id: string
-  code: string
-  role: string
-  used: boolean
-  used_by?: string
-  used_at?: string
-  created_at: string
-  created_by?: string
-  expires_at?: string
-  usage_limit?: number
-  used_count?: number
-  note?: string
-}
 
 const router = useRouter()
 const supabase = useSupabaseClient()
+const { $toast } = useNuxtApp()
 
-// Состояние формы
+// Form state
 const email = ref('')
 const password = ref('')
 const name = ref('')
 const phone = ref('')
-const inviteCode = ref('')
-const isLoading = ref(false)
-const errorMessage = ref('')
+const showPassword = ref(false)
 
-// Валидация формы
-const isDisabled = computed(() => {
-  return !email.value || !password.value || !name.value || !inviteCode.value || password.value.length < 8
+// Loading and error states
+const isLoading = ref(false)
+const genericErrorMessage = ref('')
+
+// Field-specific error states
+const emailError = ref('')
+const passwordError = ref('')
+const nameError = ref('')
+const phoneError = ref('')
+
+// Validation functions
+const validateEmail = () => {
+  emailError.value = ''
+  if (!email.value) {
+    emailError.value = 'Электронная почта обязательна.'
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+    emailError.value = 'Введите корректный адрес электронной почты.'
+  }
+  return !emailError.value
+}
+
+const validatePassword = () => {
+  passwordError.value = ''
+  if (!password.value) {
+    passwordError.value = 'Пароль обязателен.'
+  } else if (password.value.length < 8) {
+    passwordError.value = 'Пароль должен содержать минимум 8 символов.'
+  }
+  return !passwordError.value
+}
+
+const validateName = () => {
+  nameError.value = ''
+  if (!name.value) {
+    nameError.value = 'Имя обязательно.'
+  } else if (name.value.length < 2) {
+    nameError.value = 'Имя должно содержать минимум 2 символа.'
+  }
+  return !nameError.value
+}
+
+const validatePhone = () => {
+  phoneError.value = ''
+  if (phone.value) {
+    // Remove any non-digit characters for validation
+    const digitsOnly = phone.value.replace(/\D/g, '')
+    if (digitsOnly.length < 10 || digitsOnly.length > 11) {
+      phoneError.value = 'Введите корректный номер телефона.'
+    }
+  }
+  return !phoneError.value
+}
+
+const validateForm = () => {
+  const isEmailValid = validateEmail()
+  const isPasswordValid = validatePassword()
+  const isNameValid = validateName()
+  const isPhoneValid = validatePhone()
+  return isEmailValid && isPasswordValid && isNameValid && isPhoneValid
+}
+
+// Computed property for submit button state
+const isSubmitDisabled = computed(() => {
+  return isLoading.value || !email.value || !password.value || !name.value || 
+         !!emailError.value || !!passwordError.value || !!nameError.value || !!phoneError.value ||
+         password.value.length < 8
 })
 
-// Регистрация
-async function register() {
-  if (isDisabled.value) return
+// Registration function
+async function handleRegister() {
+  genericErrorMessage.value = ''
+  if (!validateForm()) {
+    $toast.error('Пожалуйста, исправьте ошибки в форме.')
+    return
+  }
   
-  errorMessage.value = ''
   isLoading.value = true
   
   try {
-    // 1. Проверяем код приглашения
-    const { data: inviteData, error: inviteError } = await supabase
-      .from('invites')
-      .select('*')
-      .eq('code', inviteCode.value)
-      .eq('used', false)
-      .single()
-    
-    if (inviteError || !inviteData) {
-      errorMessage.value = 'Неверный или уже использованный код приглашения'
-      isLoading.value = false
-      return
-    }
-    
-    // 2. Регистрируем пользователя
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: email.value,
       password: password.value,
       options: {
         data: {
-          name: name.value,
-          phone: phone.value || null,
-          role: (inviteData as InviteData).role || 'agent' // Роль из приглашения или по умолчанию 'agent'
+          full_name: name.value,
+          phone: phone.value ? `+7${phone.value.replace(/\D/g, '')}` : null,
         }
       }
     })
     
     if (authError) {
-      errorMessage.value = authError.message
-      isLoading.value = false
-      return
+      genericErrorMessage.value = authError.message
+      if (authError.message.includes('Email rate limit exceeded')) {
+         genericErrorMessage.value = 'Слишком много запросов. Пожалуйста, попробуйте позже.'
+      } else if (authError.message.includes('User already registered')) {
+         genericErrorMessage.value = 'Пользователь с таким email уже зарегистрирован.'
+         emailError.value = 'Этот email уже используется.'
+      } else {
+         genericErrorMessage.value = 'Ошибка регистрации: ' + authError.message
+      }
+      $toast.error(genericErrorMessage.value)
+    } else if (authData.user) {
+      if (authData.user.identities && authData.user.identities.length > 0 && !authData.user.email_confirmed_at) {
+        $toast.success('Регистрация почти завершена! Пожалуйста, проверьте свою почту и подтвердите ваш email адрес.')
+      } else {
+        $toast.success('Регистрация успешна! Добро пожаловать!')
+        router.push('/') 
+      }
+      email.value = '';
+      password.value = '';
+      name.value = '';
+      phone.value = '';
+    } else {
+        $toast.info('Пожалуйста, проверьте свою почту для завершения регистрации.')
     }
-    
-    // 3. Отмечаем приглашение как использованное
-    await supabase
-      .from('invites')
-      .update({ 
-        used: true,
-        used_by: authData.user?.id,
-        used_at: new Date().toISOString()
-      } as any)
-      .eq('code', inviteCode.value)
-    
-    // 4. Перенаправляем на главную или страницу подтверждения
-    router.push('/')
+
   } catch (error: any) {
-    errorMessage.value = error.message || 'Произошла ошибка при регистрации'
+    genericErrorMessage.value = error.message || 'Произошла непредвиденная ошибка при регистрации.'
+    $toast.error(genericErrorMessage.value)
   } finally {
     isLoading.value = false
   }
@@ -149,5 +239,6 @@ async function register() {
 </script>
 
 <style scoped>
-/* Убираем стили фона для использования темы Nuxt UI по умолчанию */
+/* Existing styles are fine, no new specific styles added here for now */
+/* Consider adding styles for .form-group-error text if not handled by Nuxt UI error prop */
 </style>

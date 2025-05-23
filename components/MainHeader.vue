@@ -8,6 +8,16 @@
           <span class="font-semibold text-lg">BoatRent</span>
         </NuxtLink>
         
+        <!-- Основная навигация -->
+        <div class="hidden md:flex items-center gap-4">
+          <NuxtLink to="/" class="text-gray-700 hover:text-primary transition">
+            Лодки
+          </NuxtLink>
+          <NuxtLink to="/group-tours" class="text-gray-700 hover:text-primary transition">
+            Групповые поездки
+          </NuxtLink>
+        </div>
+        
         <!-- Действия пользователя -->
         <div class="flex items-center gap-3">
           <!-- Уведомления -->
@@ -17,7 +27,7 @@
           <div v-if="user" class="relative">
             <UAvatar
               :src="userAvatar"
-              :alt="user.email || ''"
+              :alt="user.email || 'Пользователь'"
               size="sm"
               class="cursor-pointer"
               @click="toggleUserMenu"
@@ -46,6 +56,7 @@
           <!-- Кнопки аутентификации -->
           <template v-else>
             <UButton variant="ghost" to="/login">Войти</UButton>
+            <UButton variant="solid" to="/register">Регистрация</UButton>
           </template>
         </div>
       </div>
@@ -82,9 +93,9 @@ onUnmounted(() => {
 })
 
 // Вычисляемые свойства
-const userAvatar = computed(() => {
-  if (user.value && 'avatar' in user.value && user.value.avatar) return user.value.avatar
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.value?.email || 'User')}`
+const userAvatar = computed<string>(() => {
+  if (user.value && 'avatar' in user.value && user.value.avatar) return user.value.avatar as string;
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.value?.email || 'User')}`;
 })
 
 const userRoleLabel = computed(() => {
@@ -117,32 +128,32 @@ const userMenuItems = computed((): MenuItem[] => [
     label: 'Профиль',
     to: '/profile',
     icon: 'i-heroicons-user',
-    variant: 'ghost'
+    variant: 'ghost' as MenuItemVariant
   },
   ...(isAdmin.value ? [
     {
       label: 'Админ-панель',
       to: '/admin',
       icon: 'i-heroicons-cog-6-tooth',
-      variant: 'ghost'
+      variant: 'ghost' as MenuItemVariant
     }
   ] : []),
   {
     label: 'Мои бронирования',
     to: '/bookings',
     icon: 'i-heroicons-calendar',
-    variant: 'ghost'
+    variant: 'ghost' as MenuItemVariant
   },
   {
-    label: 'Мои билеты',
-    to: '/my-tickets',
-    icon: 'i-heroicons-ticket',
-    variant: 'ghost'
+    label: 'Групповые поездки',
+    to: '/group-tours',
+    icon: 'i-heroicons-user-group',
+    variant: 'ghost' as MenuItemVariant
   },
   {
     label: 'Выйти',
     icon: 'i-heroicons-arrow-right-on-rectangle',
-    variant: 'ghost',
+    variant: 'ghost' as MenuItemVariant,
     class: 'border-t mt-2 pt-2',
     click: signOut
   }

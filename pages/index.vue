@@ -5,120 +5,135 @@
       <h1 class="text-2xl font-bold">BoatRent</h1>
     </div>
 
-    <!-- Поиск -->
-    <div class="mb-6 flex flex-col sm:flex-row gap-4 items-center animate-fade-in">
-      <UInput
-        v-model="searchQuery"
-        placeholder="Поиск по названию..."
-        icon="i-heroicons-magnifying-glass"
-        class="flex-grow max-w-md"
-      />
-    </div>
+    <!-- Навигация по вкладкам с UTabs -->
+    <UTabs v-model="activeTab" :items="tabItems" class="w-full mb-6">
+      <template #content="{ item }">
+        <!-- Контент вкладки "Аренда лодок" -->
+        <div v-if="item.id === 'boats'">
+          <!-- Поиск -->
+          <div class="mb-6 flex flex-col sm:flex-row gap-4 items-center animate-fade-in">
+            <UInput
+              v-model="searchQuery"
+              placeholder="Поиск по названию..."
+              icon="i-heroicons-magnifying-glass"
+              class="flex-grow max-w-md"
+            />
+          </div>
 
-    <!-- Загрузка -->
-    <div v-if="isLoading" class="space-y-4">
-      <USkeleton v-for="n in 3" :key="n" class="h-64 rounded-lg" />
-    </div>
+          <!-- Загрузка -->
+          <div v-if="isLoading" class="space-y-4">
+            <USkeleton v-for="n in 3" :key="n" class="h-64 rounded-lg" />
+          </div>
 
-    <!-- Ошибка -->
-    <UAlert
-      v-else-if="errorMessage"
-      title="Ошибка загрузки"
-      :description="errorMessage"
-      icon="i-heroicons-exclamation-triangle"
-      variant="solid"
-      class="mb-4"
-    />
+          <!-- Ошибка -->
+          <UAlert
+            v-else-if="errorMessage"
+            title="Ошибка загрузки"
+            :description="errorMessage"
+            icon="i-heroicons-exclamation-triangle"
+            variant="solid"
+            class="mb-4"
+          />
 
-    <!-- Сетка лодок -->
-    <div v-else class="space-y-6">
-      <TransitionGroup
-        v-if="filteredBoats.length"
-        name="list"
-        tag="div"
-        class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-      >
-        <UCard
-          v-for="boat in filteredBoats"
-          :key="boat.id"
-          class="transition-transform duration-300 hover:shadow-lg"
-          @click="navigateToBoat(boat)"
-        >
-          <template #header>
-            <div class="flex items-center gap-4 p-4">
-              <UAvatar :src="getBoatImage(boat)" :alt="boat.name || 'Лодка'" size="lg" class="flex-shrink-0" />
-              <div>
-                <h3 class="text-lg font-bold truncate">{{ boat.name || 'Без названия' }}</h3>
-                <!-- Рейтинг -->
-                <div class="mt-1 flex items-center gap-2 text-sm">
-                  <div class="flex">
-                    <template v-for="star in 5" :key="star">
-                      <UIcon
-                        :name="star <= Math.round(boat.averageRating || 0) ? 'i-heroicons-star-solid' : 'i-heroicons-star'"
-                        class="w-4 h-4"
-                        :class="star <= Math.round(boat.averageRating || 0) ? 'text-warning' : ''"
-                      />
-                    </template>
-                  </div>
-                  <span v-if="boat.totalReviews > 0" class="ml-1 font-medium">
-                    {{ parseFloat(boat.averageRating).toFixed(1) }}
-                    <span class="text-muted">({{ boat.totalReviews }} {{ reviewTextPlural(boat.totalReviews) }})</span>
-                  </span>
-                  <span v-else class="ml-1 text-muted">Нет отзывов</span>
-                </div>
-                
-                <div v-if="boat.tags?.length" class="flex flex-wrap gap-2 mt-2">
-                  <UBadge
-                    v-for="tag in boat.tags"
-                    :key="tag"
-                    variant="subtle"
-                    color="primary"
-                  >
-                    {{ tag }}
-                  </UBadge>
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <div class="p-4">
-            <div class="grid grid-cols-1 gap-4">
-              <!-- Основное изображение -->
-              <div class="relative h-48 rounded-lg overflow-hidden">
-                <img
-                  :src="getBoatImage(boat)"
-                  :alt="boat.name || 'Фото лодки'"
-                  class="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-              
-              <!-- Цена и детали -->
-              <div class="space-y-3">
-                <div>
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <UIcon name="i-heroicons-currency-dollar" color="primary" />
-                      <span>Цена за час:</span>
+          <!-- Сетка лодок -->
+          <div v-else class="space-y-6">
+            <TransitionGroup
+              v-if="filteredBoats.length"
+              name="list"
+              tag="div"
+              class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
+              <UCard
+                v-for="boat in filteredBoats"
+                :key="boat.id"
+                class="transition-transform duration-300 hover:shadow-lg"
+                @click="navigateToBoat(boat)"
+              >
+                <template #header>
+                  <div class="flex items-center gap-4 p-4">
+                    <UAvatar :src="getBoatImage(boat)" :alt="boat.name || 'Лодка'" size="lg" class="flex-shrink-0" />
+                    <div>
+                      <h3 class="text-lg font-bold truncate">{{ boat.name || 'Без названия' }}</h3>
+                      <!-- Рейтинг -->
+                      <div class="mt-1 flex items-center gap-2 text-sm">
+                        <div class="flex">
+                          <template v-for="star in 5" :key="star">
+                            <UIcon
+                              :name="star <= Math.round(boat.averageRating || 0) ? 'i-heroicons-star-solid' : 'i-heroicons-star'"
+                              class="w-4 h-4"
+                              :class="star <= Math.round(boat.averageRating || 0) ? 'text-warning' : ''"
+                            />
+                          </template>
+                        </div>
+                        <span v-if="boat.totalReviews > 0" class="ml-1 font-medium">
+                          {{ parseFloat(boat.averageRating).toFixed(1) }}
+                          <span class="text-muted">({{ boat.totalReviews }} {{ reviewTextPlural(boat.totalReviews) }})</span>
+                        </span>
+                        <span v-else class="ml-1 text-muted">Нет отзывов</span>
+                      </div>
+                      
+                      <div v-if="boat.tags?.length" class="flex flex-wrap gap-2 mt-2">
+                        <UBadge
+                          v-for="tag in boat.tags"
+                          :key="tag"
+                          variant="subtle"
+                          color="primary"
+                        >
+                          {{ tag }}
+                        </UBadge>
+                      </div>
                     </div>
-                    <span class="font-medium text-lg text-primary">{{ formatPrice(boat.price) }}</span>
+                  </div>
+                </template>
+
+                <div class="p-4">
+                  <div class="grid grid-cols-1 gap-4">
+                    <!-- Основное изображение -->
+                    <div class="relative h-48 rounded-lg overflow-hidden">
+                      <img
+                        :src="getBoatImage(boat)"
+                        :alt="boat.name || 'Фото лодки'"
+                        class="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                    
+                    <!-- Цена и детали -->
+                    <div class="space-y-3">
+                      <div>
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center gap-2">
+                            <UIcon name="i-heroicons-currency-dollar" color="primary" />
+                            <span>Цена за час:</span>
+                          </div>
+                          <span class="font-medium text-lg text-primary">{{ formatPrice(boat.price) }}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </UCard>
+            </TransitionGroup>
+
+            <!-- Пустой результат -->
+            <div v-else class="text-center py-8">
+              <UIcon name="i-lucide-anchor" class="w-12 h-12 mx-auto mb-4" />
+              <p class="text-xl">Лодок не найдено</p>
+              <p v-if="searchQuery" class="text-sm mt-2">
+                По запросу "{{ searchQuery }}" ничего не найдено
+              </p>
             </div>
           </div>
-        </UCard>
-      </TransitionGroup>
-
-      <!-- Пустой результат -->
-      <div v-else class="text-center py-8">
-        <UIcon name="i-lucide-anchor" class="w-12 h-12 mx-auto mb-4" />
-        <p class="text-xl">Лодок не найдено</p>
-        <p v-if="searchQuery" class="text-sm mt-2">
-          По запросу "{{ searchQuery }}" ничего не найдено
-        </p>
-      </div>
-    </div>
+        </div>
+        
+        <!-- Контент вкладки "Групповые поездки" -->
+        <div v-else-if="item.id === 'groups'">
+          <ClientOnly>
+            <GroupTripList />
+          </ClientOnly>
+        </div>
+      </template>
+    </UTabs>
   </div>
 </template>
 
@@ -127,6 +142,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useSupabaseClient } from '#imports'
 import { useRouter } from 'vue-router'
 import { useBoatImages } from '~/composables/useBoatImages'
+import GroupTripList from '~/components/GroupTripList.vue'
 
 definePageMeta({
   layout: 'default'
@@ -141,6 +157,23 @@ const boats = ref<any[]>([])
 const isLoading = ref(true)
 const errorMessage = ref<string | null>(null)
 const searchQuery = ref('')
+
+// Навигация и вкладки
+const activeTab = ref('boats')
+const tabs = [
+  { id: 'boats', name: 'Аренда лодок', icon: 'i-lucide-anchor' },
+  { id: 'groups', name: 'Групповые поездки', icon: 'i-heroicons-user-group' }
+]
+
+// Преобразуем массив tabs в формат, ожидаемый UTabs компонентом
+const tabItems = computed(() => 
+  tabs.map(tab => ({
+    label: tab.name,
+    icon: tab.icon,
+    value: tab.id,
+    id: tab.id
+  }))
+)
 
 // Фильтрация лодок по названию
 const filteredBoats = computed(() =>
@@ -251,7 +284,7 @@ onMounted(async () => {
 .list-enter-from,
 .list-leave-to {
   opacity: 0;
-  transform: translateY(30px);
+  transform: translateY(20px);
 }
 
 .animate-fade-in-down {

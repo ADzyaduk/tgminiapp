@@ -38,7 +38,7 @@
 
         <div class="text-center text-sm mt-4">
           Нет аккаунта?
-          <NuxtLink to="/reg" class="text-primary-600 hover:underline">
+          <NuxtLink to="/register" class="text-primary-600 hover:underline">
             Зарегистрироваться
           </NuxtLink>
         </div>
