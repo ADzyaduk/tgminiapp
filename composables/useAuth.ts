@@ -82,13 +82,16 @@ export function useAuth() {
 
   // Инициализируем auth listener только один раз
   if (!isInitialized) {
-    authListener = supabaseClient.auth.onAuthStateChange((event) => {
-      console.log('Auth state change:', event)
+    authListener = supabaseClient.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state change:', event, session?.user?.email)
       if (event === 'SIGNED_OUT') {
         user.value = null
         isAdmin.value = false
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        fetchUser()
+        // Небольшая задержка чтобы сессия полностью установилась
+        setTimeout(() => {
+          fetchUser()
+        }, 100)
       }
     })
     

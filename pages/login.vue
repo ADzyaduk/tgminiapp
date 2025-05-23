@@ -89,17 +89,12 @@ async function handleLogin() {
     
     console.log('Login successful, user data:', data.user)
     
-    // Обновляем состояние пользователя
-    await fetchUser()
-    
-    console.log('User state after fetchUser:', user.value)
-    
     toast.add({ title: 'Успешный вход!', color: 'success' })
     
     // Добавляем небольшую задержку перед редиректом
     setTimeout(() => {
       router.push('/')
-    }, 300)
+    }, 500)  // Увеличили задержку до 500ms
   } catch (err: any) {
     console.error('Login error:', err)
     toast.add({ title: 'Ошибка входа', description: err.message, color: 'error' })
