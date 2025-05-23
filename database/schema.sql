@@ -114,15 +114,16 @@ ALTER TABLE boats ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public boats are viewable by everyone" ON boats
     FOR SELECT USING (status = 'active');
 
--- Только авторизованные пользователи могут создавать бронирования
+-- Разрешаем создавать бронирования всем пользователям, включая неавторизованных
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can create bookings" ON bookings
-    FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "Anyone can create bookings" ON bookings
+    FOR INSERT WITH CHECK (true);
     
 -- Пользователи видят только свои бронирования, администраторы и менеджеры видят все
 CREATE POLICY "Users can view their own bookings" ON bookings
     FOR SELECT USING (
-        auth.uid() = user_id OR 
+        auth.uid() = user_id OR
+        user_id IS NULL OR
         EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'manager'))
     );
 

@@ -51,12 +51,14 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast, useSupabaseClient } from '#imports'
+import { useAuth } from '~/composables/useAuth'
 
 interface LoginForm { email: string; password: string }
 
 const supabaseClient = useSupabaseClient()
 const router = useRouter()
 const toast = useToast()
+const { fetchUser } = useAuth()
 
 const form = ref<LoginForm>({ email: '', password: '' })
 const errors = ref<Partial<Record<keyof LoginForm, string>>>({})
@@ -81,8 +83,16 @@ async function handleLogin() {
       password: form.value.password,
     })
     if (error) throw error
+    
+    // Обновляем состояние пользователя
+    await fetchUser()
+    
     toast.add({ title: 'Успешный вход!', color: 'green' })
-    router.push('/')
+    
+    // Добавляем небольшую задержку перед редиректом
+    setTimeout(() => {
+      router.push('/')
+    }, 300)
   } catch (err: any) {
     toast.add({ title: 'Ошибка входа', description: err.message, color: 'red' })
   } finally {
