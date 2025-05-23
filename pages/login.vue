@@ -78,8 +78,6 @@ async function handleLogin() {
 
   loading.value = true
   try {
-    console.log('Attempting login with:', form.value.email)
-    
     const { data, error } = await supabaseClient.auth.signInWithPassword({
       email: form.value.email,
       password: form.value.password,
@@ -87,14 +85,12 @@ async function handleLogin() {
     
     if (error) throw error
     
-    console.log('Login successful, user data:', data.user)
-    
     toast.add({ title: 'Успешный вход!', color: 'success' })
     
     // Добавляем небольшую задержку перед редиректом
     setTimeout(() => {
       router.push('/')
-    }, 500)  // Увеличили задержку до 500ms
+    }, 500)
   } catch (err: any) {
     console.error('Login error:', err)
     toast.add({ title: 'Ошибка входа', description: err.message, color: 'error' })
