@@ -89,11 +89,13 @@ export function useAuth() {
   // Инициализируем auth listener только один раз
   if (!isInitialized) {
     authListener = supabaseClient.auth.onAuthStateChange((event, session) => {
+      console.log('🔄 Auth state change:', event, session?.user?.email)
       if (event === 'SIGNED_OUT') {
         user.value = null
         isAdmin.value = false
       } else if (event === 'SIGNED_IN' && session?.user) {
         // Используем user из session напрямую, без дополнительного getUser() вызова
+        console.log('✅ Using session from auth event:', session.user.email)
         fetchUserProfile(session.user.id)
       } else if (event === 'TOKEN_REFRESHED') {
         // Для TOKEN_REFRESHED используем обычный fetchUser
@@ -110,6 +112,7 @@ export function useAuth() {
       // Получаем сессию напрямую вместо getUser()
       console.log('🔍 Checking for existing session on app init...')
       supabaseClient.auth.getSession().then(({ data: { session }, error }) => {
+        console.log('🔍 getSession result:', { session: session?.user?.email, error })
         if (error) {
           console.error('❌ Error getting initial session:', error)
           loading.value = false
@@ -121,6 +124,9 @@ export function useAuth() {
           fetchUserProfile(session.user.id)
         } else {
           console.log('❌ No existing session found')
+          // Попробуем проверить localStorage напрямую
+          const stored = localStorage.getItem('supabase.auth.token')
+          console.log('💾 localStorage token:', stored ? 'exists' : 'missing')
           loading.value = false
         }
       })
