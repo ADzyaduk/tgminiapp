@@ -85,6 +85,10 @@ async function handleLogin() {
     
     if (error) throw error
     
+    // Проверяем сессию сразу после логина
+    const { data: sessionData } = await supabaseClient.auth.getSession()
+    console.log('🔍 Session after login:', sessionData.session?.user?.email)
+    
     toast.add({ title: 'Успешный вход!', color: 'success' })
     
     // Добавляем небольшую задержку перед редиректом

@@ -22,12 +22,15 @@ export default defineNuxtConfig({
   supabase: {
     redirect: false,
     cookieOptions: {
-      secure: process.env.NODE_ENV === 'production'
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 60 * 60 * 24 * 7 // 7 дней
     },
     clientOptions: {
       auth: {
         persistSession: true,
-        autoRefreshToken: true
+        autoRefreshToken: true,
+        storage: process.client ? window.localStorage : undefined,
+        storageKey: 'supabase.auth.token'
       }
     }
   },
