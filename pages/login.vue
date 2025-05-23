@@ -76,6 +76,11 @@ async function handleLogin() {
     return
   }
 
+  // Проверяем конфигурацию Supabase
+  const config = useRuntimeConfig()
+  console.log('🔧 Supabase URL:', config.public.supabaseUrl?.substring(0, 30) + '...')
+  console.log('🔧 Supabase Key:', config.public.supabaseAnonKey?.substring(0, 20) + '...')
+
   loading.value = true
   try {
     const { data, error } = await supabaseClient.auth.signInWithPassword({
@@ -84,6 +89,10 @@ async function handleLogin() {
     })
     
     if (error) throw error
+    
+    console.log('📝 Login response data:', data)
+    console.log('📝 User from login:', data.user?.email)
+    console.log('📝 Session from login:', data.session?.user?.email)
     
     // Проверяем сессию сразу после логина
     const { data: sessionData } = await supabaseClient.auth.getSession()

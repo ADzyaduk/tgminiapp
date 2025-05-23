@@ -18,21 +18,9 @@ export default defineNuxtConfig({
   // Стили
   css: ['~/assets/css/main.css'],
   
-  // Настройки Supabase - расширенные
+  // Настройки Supabase - упрощенные
   supabase: {
-    redirect: false,
-    cookieOptions: {
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7 // 7 дней
-    },
-    clientOptions: {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        storage: process.client ? window.localStorage : undefined,
-        storageKey: 'supabase.auth.token'
-      }
-    }
+    redirect: false
   },
   
   // Переменные окружения
