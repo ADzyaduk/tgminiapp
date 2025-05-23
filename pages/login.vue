@@ -97,6 +97,18 @@ async function handleLogin() {
     // Используем сессию из ответа напрямую
     if (data.session?.user) {
       console.log('🚀 Setting user state directly from login response')
+      
+      // Вручную сохраняем токен если Supabase не сохранил автоматически
+      if (!localStorage.getItem('supabase.auth.token') && data.session) {
+        console.log('💾 Manually saving session to localStorage')
+        localStorage.setItem('supabase.auth.token', JSON.stringify({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+          expires_at: data.session.expires_at,
+          user: data.session.user
+        }))
+      }
+      
       // Вместо ожидания auth events, устанавливаем состояние сразу
       const { fetchUserProfile } = useAuth()
       await fetchUserProfile(data.session.user.id)

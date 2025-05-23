@@ -127,6 +127,22 @@ export function useAuth() {
           // Попробуем проверить localStorage напрямую
           const stored = localStorage.getItem('supabase.auth.token')
           console.log('💾 localStorage token:', stored ? 'exists' : 'missing')
+          
+          // Если есть токен в localStorage, попробуем восстановить сессию
+          if (stored) {
+            try {
+              const tokenData = JSON.parse(stored)
+              if (tokenData.user && tokenData.access_token) {
+                console.log('🔄 Restoring session from localStorage:', tokenData.user.email)
+                fetchUserProfile(tokenData.user.id)
+                return
+              }
+            } catch (e) {
+              console.error('❌ Error parsing stored token:', e)
+              localStorage.removeItem('supabase.auth.token')
+            }
+          }
+          
           loading.value = false
         }
       })
