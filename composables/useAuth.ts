@@ -29,17 +29,41 @@ export const useAuth = () => {
     try {
       initializing.value = true
 
-      // Получаем текущую сессию
-      const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession()
-      
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        return
+      // Пробуем восстановить сессию несколько раз
+      let currentSession = null
+      let attempts = 0
+      const maxAttempts = 5
+
+      while (!currentSession && attempts < maxAttempts) {
+        try {
+          const { data: { session: sessionData }, error: sessionError } = await supabase.auth.getSession()
+          
+          if (sessionError) {
+            console.warn(`Session attempt ${attempts + 1} failed:`, sessionError)
+            attempts++
+            if (attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 100))
+              continue
+            }
+            break
+          }
+
+          currentSession = sessionData
+          break
+        } catch (error) {
+          console.warn(`Session attempt ${attempts + 1} error:`, error)
+          attempts++
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 100))
+          }
+        }
       }
 
       // Устанавливаем начальное состояние
       session.value = currentSession
       user.value = currentSession?.user ?? null
+
+            if (import.meta.dev) {        console.log('Auth initialized:', {          hasSession: !!currentSession,          hasUser: !!user.value,          userEmail: user.value?.email        })      }
 
       // Если есть пользователь, загружаем профиль
       if (user.value) {
@@ -48,7 +72,7 @@ export const useAuth = () => {
 
       // Настраиваем слушатель изменений авторизации
       supabase.auth.onAuthStateChange(async (event, newSession) => {
-
+        if (import.meta.dev) {          console.log('Auth state change:', event, newSession?.user?.email)        }
         
         session.value = newSession
         user.value = newSession?.user ?? null
@@ -255,7 +279,7 @@ export const useAuth = () => {
     }
   }
 
-    // Инициализация происходит только через plugin
+  // Инициализация происходит только через plugin
 
   return {
     // Состояние

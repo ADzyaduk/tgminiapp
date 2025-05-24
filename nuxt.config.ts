@@ -25,7 +25,8 @@ export default defineNuxtConfig({
     cookieOptions: {
       maxAge: 60 * 60 * 24 * 7, // 7 дней
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production', // Исправляет проблемы с localhost
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: false, // Позволяет JS доступ к cookies
     },
     clientOptions: {
       auth: {
@@ -33,6 +34,8 @@ export default defineNuxtConfig({
         detectSessionInUrl: true,
         persistSession: true,
         autoRefreshToken: true,
+        storageKey: 'sb-auth-token', // Явный ключ для хранения
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
       }
     }
   },
