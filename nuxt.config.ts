@@ -19,13 +19,13 @@ export default defineNuxtConfig({
   // Стили
   css: ['~/assets/css/main.css'],
   
-  // Настройки Supabase с правильными cookie опциями
+  // Настройки Supabase с исправлениями для dev режима
   supabase: {
     redirect: false,
     cookieOptions: {
       maxAge: 60 * 60 * 24 * 7, // 7 дней
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production', // Важно: false в dev режиме
       httpOnly: false, // Позволяет JS доступ к cookies
     },
     clientOptions: {
@@ -34,7 +34,8 @@ export default defineNuxtConfig({
         detectSessionInUrl: true,
         persistSession: true,
         autoRefreshToken: true,
-        storageKey: 'sb-auth-token', // Явный ключ для хранения
+        storageKey: 'sb-auth-token',
+        // Явно указываем localStorage для браузера
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
       }
     }

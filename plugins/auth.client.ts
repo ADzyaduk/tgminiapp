@@ -1,22 +1,12 @@
-export default defineNuxtPlugin(async (nuxtApp) => {
-  // Инициализируем аутентификацию только на клиенте
-  const { initializeAuth, initializing } = useAuth()
+export default defineNuxtPlugin(async () => {
+  const { initializeAuth } = useAuth()
   
-  // Ждем инициализации
+  // Показываем debug информацию в dev режиме
+  if (import.meta.dev) {
+    const { debugAuth } = await import('~/utils/authDebug')
+    debugAuth()
+  }
+  
+  // Инициализируем авторизацию только на клиенте
   await initializeAuth()
-  
-  // Добавляем хук для ожидания инициализации
-  nuxtApp.hook('app:beforeMount', () => {
-    // Убеждаемся что инициализация завершена перед монтированием
-    return new Promise((resolve) => {
-      const checkInitialization = () => {
-        if (!initializing.value) {
-          resolve(true)
-        } else {
-          setTimeout(checkInitialization, 10)
-        }
-      }
-      checkInitialization()
-    })
-  })
 }) 
