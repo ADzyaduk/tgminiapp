@@ -125,7 +125,7 @@ const fetchBoat = async () => {
     boat.value = data
   } catch (err: any) {
     console.error('Ошибка загрузки лодки:', err)
-    toast.add({ title: 'Ошибка', description: err.message, color: 'red' })
+    toast.add({ title: 'Ошибка', description: err.message, color: 'error' })
     boat.value = null
   } finally {
     loading.value = false
@@ -169,12 +169,12 @@ const signOut = async () => {
     user.value = null
     await router.replace('/login')
   } catch (err: any) {
-    toast.add({ title: 'Ошибка выхода', description: err.message, color: 'red' })
+    toast.add({ title: 'Ошибка выхода', description: err.message, color: 'error' })
   }
 }
 
 const handleBookingCreated = () => {
-  toast.add({ title: 'Бронирование создано!', description: 'Ваше бронирование успешно оформлено', color: 'green' })
+  toast.add({ title: 'Бронирование создано!', description: 'Ваше бронирование успешно оформлено', color: 'success' })
   fetchBoat()
 }
 

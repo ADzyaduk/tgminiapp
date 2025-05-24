@@ -97,13 +97,19 @@ async function handleLogin() {
     const result = await signIn(form.value.email, form.value.password)
     
     if (!result.success) {
-      throw new Error(result.error)
+      toast.add({ title: 'Ошибка входа', description: result.error, color: 'error' })
+      return
     }
     
     toast.add({ title: 'Успешный вход!', color: 'success' })
     
     // Перенаправление произойдет автоматически через watcher
-    } catch (err: any) {    if (import.meta.dev) {      console.error('Login error:', err)    }    toast.add({ title: 'Ошибка входа', description: err.message, color: 'error' })  } finally {
+  } catch (err: any) {
+    if (import.meta.dev) {
+      console.error('Login error:', err)
+    }
+    toast.add({ title: 'Ошибка входа', description: err.message, color: 'error' })
+  } finally {
     loading.value = false
   }
 }

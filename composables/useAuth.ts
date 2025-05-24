@@ -1,5 +1,5 @@
 // ~/composables/useAuth.ts
-import { ref, computed } from 'vue'
+import { ref, computed, readonly } from 'vue'
 import type { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'vue-router'
 import { useSupabaseClient } from '#imports'
@@ -109,16 +109,19 @@ export const useAuth = () => {
         password
       })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Sign in error:', error)
+        return { success: false, data: null, error: error.message }
+      }
 
       if (import.meta.dev) {
         console.log('✅ Signed in successfully')
       }
 
-      return { data, error: null }
-    } catch (error) {
+      return { success: true, data, error: null }
+    } catch (error: any) {
       console.error('❌ Sign in error:', error)
-      return { data: null, error }
+      return { success: false, data: null, error: error.message || 'Неизвестная ошибка' }
     }
   }
 
@@ -133,12 +136,19 @@ export const useAuth = () => {
         }
       })
 
-      if (error) throw error
+      if (error) {
+        console.error('❌ Sign up error:', error)
+        return { success: false, data: null, error: error.message }
+      }
 
-      return { data, error: null }
-    } catch (error) {
+      if (import.meta.dev) {
+        console.log('✅ Signed up successfully')
+      }
+
+      return { success: true, data, error: null }
+    } catch (error: any) {
       console.error('❌ Sign up error:', error)
-      return { data: null, error }
+      return { success: false, data: null, error: error.message || 'Неизвестная ошибка' }
     }
   }
 

@@ -166,22 +166,23 @@ async function handleRegister() {
     const result = await signUp(form.value.email, form.value.password, metadata)
     
     if (!result.success) {
-      if (result.error.includes('User already registered')) {
+      if (result.error && result.error.includes('User already registered')) {
         errors.value.email = 'Этот email уже используется'
         toast.add({ title: 'Пользователь с таким email уже зарегистрирован', color: 'error' })
       } else {
-        toast.add({ title: 'Ошибка регистрации', description: result.error, color: 'error' })
+        toast.add({ title: 'Ошибка регистрации', description: result.error || 'Неизвестная ошибка', color: 'error' })
       }
-    } else {
-      toast.add({ 
-        title: 'Регистрация завершена!', 
-        description: 'Проверьте свою почту для подтверждения email',
-        color: 'success' 
-      })
-      
-      // Очищаем форму
-      form.value = { email: '', password: '', name: '', phone: '' }
+      return
     }
+    
+    toast.add({ 
+      title: 'Регистрация завершена!', 
+      description: 'Проверьте свою почту для подтверждения email',
+      color: 'success' 
+    })
+    
+    // Очищаем форму
+    form.value = { email: '', password: '', name: '', phone: '' }
   } catch (err: any) {
     console.error('Registration error:', err)
     toast.add({ title: 'Ошибка регистрации', description: err.message, color: 'error' })
