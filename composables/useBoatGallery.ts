@@ -8,7 +8,8 @@ export function useBoatGallery() {
 
   const allBoatImages = import.meta.glob('@/assets/boats/*/*.{png,jpg,jpeg}', {
     eager: true,
-    as: 'url'
+    query: '?url',
+    import: 'default'
   })
 
   const images = computed<string[]>(() =>

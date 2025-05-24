@@ -12,15 +12,29 @@ export default defineNuxtConfig({
   
   // UI настройки
   ui: {
-    icons: ['heroicons', 'lucide']
+    icons: ['heroicons', 'lucide'],
+    global: true
   },
   
   // Стили
   css: ['~/assets/css/main.css'],
   
-  // Настройки Supabase - упрощенные
+  // Настройки Supabase с правильными cookie опциями
   supabase: {
-    redirect: false
+    redirect: false,
+    cookieOptions: {
+      maxAge: 60 * 60 * 24 * 7, // 7 дней
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production', // Исправляет проблемы с localhost
+    },
+    clientOptions: {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true,
+      }
+    }
   },
   
   // Переменные окружения

@@ -1,156 +1,286 @@
 // ~/composables/useAuth.ts
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
+import type { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'vue-router'
 import { useSupabaseClient } from '#imports'
 
-// Global state - все компоненты будут использовать одно и то же состояние
-const user = ref<null | { id: string; email: string; role: string }>(null)
-const isAdmin = ref(false)
-const loading = ref(true)
-const error = ref<string | null>(null)
+// Глобальное состояние - разделяется между всеми компонентами
+const user = ref<User | null>(null)
+const session = ref<Session | null>(null)
+const profile = ref<any>(null)
+const initializing = ref(true)
 
-let authListener: any = null
-let isInitialized = false
-
-export function useAuth() {
+export const useAuth = () => {
+  const supabase = useSupabaseClient()
   const router = useRouter()
-  const supabaseClient = useSupabaseClient()
 
-  async function fetchUserProfile(userId: string) {
-    loading.value = true
-    error.value = null
+  // Вычисляемые свойства
+  const isLoggedIn = computed(() => !!user.value)
+  const isAdmin = computed(() => {
+    // Проверяем роль из профиля или из метаданных пользователя
+    return profile.value?.role === 'admin' || 
+           user.value?.user_metadata?.role === 'admin'
+  })
+  const userEmail = computed(() => user.value?.email)
+  const userId = computed(() => user.value?.id)
+
+  // Инициализация - выполняется один раз
+  const initializeAuth = async () => {
     try {
-      const { data: profile, error: pErr } = await supabaseClient
-        .from('profiles')
-        .select('id, email, role')
-        .eq('id', userId)
-        .single()
-        
-      if (pErr) {
-        console.error('Profile query error:', pErr)
-        throw pErr
-      }
+      initializing.value = true
+
+      // Получаем текущую сессию
+      const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession()
       
-      if (!profile) {
-        user.value = null
-        isAdmin.value = false
+      if (sessionError) {
+        console.error('Session error:', sessionError)
         return
       }
-      
-      user.value = profile
-      isAdmin.value = profile.role === 'admin'
-    } catch (e: any) {
-      console.error('Error fetching user profile:', e)
-      error.value = e.message
-      user.value = null
-      isAdmin.value = false
-    } finally {
-      loading.value = false
-    }
-  }
 
-  async function fetchUser() {
-    loading.value = true
-    error.value = null
-    try {
-      const { data: { user: u }, error: err } = await supabaseClient.auth.getUser()
-      if (err) throw err
-      if (!u) {
-        user.value = null
-        isAdmin.value = false
-        return
-      } else {
-        await fetchUserProfile(u.id)
+      // Устанавливаем начальное состояние
+      session.value = currentSession
+      user.value = currentSession?.user ?? null
+
+      // Если есть пользователь, загружаем профиль
+      if (user.value) {
+        await fetchProfile()
       }
-    } catch (e: any) {
-      console.error('Error fetching user:', e)
-      error.value = e.message
-      user.value = null
-      isAdmin.value = false
-    } finally {
-      loading.value = false
-    }
-  }
 
-  async function signOut() {
-    loading.value = true
-    try {
-      await supabaseClient.auth.signOut()
-      user.value = null
-      isAdmin.value = false
-      // Очищаем localStorage
-      localStorage.removeItem('supabase.auth.token')
-      router.replace('/login')
-    } catch (e: any) {
-      error.value = e.message
-    } finally {
-      loading.value = false
-    }
-  }
+      // Настраиваем слушатель изменений авторизации
+      supabase.auth.onAuthStateChange(async (event, newSession) => {
 
-  // Инициализируем auth listener только один раз
-  if (!isInitialized) {
-    authListener = supabaseClient.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        user.value = null
-        isAdmin.value = false
-        // Очищаем localStorage при выходе
-        localStorage.removeItem('supabase.auth.token')
-      } else if (event === 'SIGNED_IN' && session?.user) {
-        fetchUserProfile(session.user.id)
-      } else if (event === 'TOKEN_REFRESHED') {
-        setTimeout(() => {
-          fetchUser()
-        }, 100)
-      }
-    })
-    
-    isInitialized = true
-    
-    // Проверяем начальную сессию при инициализации клиента
-    if (process.client) {
-      supabaseClient.auth.getSession().then(({ data: { session }, error }) => {
-        if (error) {
-          loading.value = false
-          return
-        }
         
-        if (session?.user) {
-          fetchUserProfile(session.user.id)
-        } else {
-          // Пытаемся восстановить сессию из localStorage
-          const stored = localStorage.getItem('supabase.auth.token')
-          
-          if (stored) {
-            try {
-              const tokenData = JSON.parse(stored)
-              if (tokenData.user && tokenData.access_token) {
-                fetchUserProfile(tokenData.user.id)
-                return
-              }
-            } catch (e) {
-              localStorage.removeItem('supabase.auth.token')
+        session.value = newSession
+        user.value = newSession?.user ?? null
+
+        switch (event) {
+          case 'SIGNED_IN':
+            await fetchProfile()
+            break
+          case 'SIGNED_OUT':
+            profile.value = null
+            break
+          case 'TOKEN_REFRESHED':
+            if (user.value) {
+              await fetchProfile()
             }
-          }
-          
-          loading.value = false
+            break
+          case 'USER_UPDATED':
+            if (user.value) {
+              await fetchProfile()
+            }
+            break
         }
       })
+
+    } catch (error) {
+      console.error('Auth initialization error:', error)
+    } finally {
+      initializing.value = false
     }
   }
 
-  onMounted(() => {
-    // Не вызываем fetchUser() в onMounted - auth listener должен обработать начальное состояние
-    // if (!user.value && !loading.value) {
-    //   fetchUser()
-    // }
-  })
-  
-  // Clean up listener when component unmounts
-  onUnmounted(() => {
-    // НЕ очищаем listener при размонтировании компонента, 
-    // так как это глобальное состояние
-  })
+  // Загрузка профиля пользователя
+  const fetchProfile = async () => {
+    if (!user.value) {
+      profile.value = null
+      return
+    }
 
-  return { user, isAdmin, loading, error, fetchUser, fetchUserProfile, signOut }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.value.id)
+        .single()
+
+      if (error) {
+        console.warn('Profile fetch error:', error.message)
+        
+        // Если профиль не найден или есть проблемы с RLS,
+        // создаем временный профиль из данных пользователя
+        profile.value = {
+          id: user.value.id,
+          email: user.value.email,
+          name: user.value.user_metadata?.full_name || user.value.user_metadata?.name || '',
+          phone: user.value.user_metadata?.phone || '',
+          role: user.value.user_metadata?.role || 'user'
+        }
+        return
+      }
+
+      profile.value = data
+    } catch (error) {
+      console.warn('Unexpected profile error:', error)
+      
+      // Fallback профиль
+      profile.value = {
+        id: user.value.id,
+        email: user.value.email,
+        name: user.value.user_metadata?.full_name || user.value.user_metadata?.name || '',
+        phone: user.value.user_metadata?.phone || '',
+        role: user.value.user_metadata?.role || 'user'
+      }
+    }
+  }
+
+  // Вход в систему с email/password
+  const signIn = async (email: string, password: string) => {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+
+      if (error) {
+        throw error
+      }
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Sign in error:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Регистрация
+  const signUp = async (email: string, password: string, metadata?: any) => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: metadata
+        }
+      })
+
+      if (error) {
+        throw error
+      }
+
+      return { success: true, data }
+    } catch (error: any) {
+      console.error('Sign up error:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Выход из системы
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut()
+      
+      if (error) {
+        throw error
+      }
+
+      // Очищаем состояние
+      user.value = null
+      session.value = null
+      profile.value = null
+
+      // Перенаправляем на страницу входа
+      await router.push('/login')
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Sign out error:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Вход через OAuth
+  const signInWithOAuth = async (provider: any, options?: any) => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          ...options
+        }
+      })
+
+      if (error) {
+        throw error
+      }
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('OAuth sign in error:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Обновление профиля
+  const updateProfile = async (updates: any) => {
+    if (!user.value) {
+      return { success: false, error: 'Пользователь не авторизован' }
+    }
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.value.id)
+
+      if (error) {
+        throw error
+      }
+
+      // Обновляем локальное состояние
+      profile.value = { ...profile.value, ...updates }
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Profile update error:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Сброс пароля
+  const resetPassword = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`
+      })
+
+      if (error) {
+        throw error
+      }
+
+      return { success: true }
+    } catch (error: any) {
+      console.error('Password reset error:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  // Инициализация при первом вызове
+  if (initializing.value === true && process.client) {
+    initializeAuth()
+  }
+
+  return {
+    // Состояние
+    user: readonly(user),
+    session: readonly(session),
+    profile: readonly(profile),
+    initializing: readonly(initializing),
+    
+    // Вычисляемые свойства
+    isLoggedIn,
+    isAdmin,
+    userEmail,
+    userId,
+    
+    // Методы
+    initializeAuth,
+    fetchProfile,
+    signIn,
+    signUp,
+    signOut,
+    signInWithOAuth,
+    updateProfile,
+    resetPassword
+  }
 }

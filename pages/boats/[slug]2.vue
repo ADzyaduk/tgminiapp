@@ -139,7 +139,7 @@ const checkManager = async () => {
     return
   }
   try {
-    console.log('Проверяем менеджера для boat_id=', boat.value.id, 'user_id=', user.value.id)
+  
     const { data, error } = await supabase
       .from('boat_managers')
       .select('user_id')
@@ -148,7 +148,7 @@ const checkManager = async () => {
       .maybeSingle()
     if (error) throw error
     isManager.value = !!data
-    console.log('isManager:', isManager.value)
+    
   } catch (err) {
     console.error('Ошибка проверки менеджера:', err)
     isManager.value = false

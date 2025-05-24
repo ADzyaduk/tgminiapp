@@ -69,7 +69,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAuth } from '~/composables/useAuth'
 
 // Состояние
-const { user, isAdmin, signOut } = useAuth()
+const { user, profile, isAdmin, signOut } = useAuth()
 const showUserMenu = ref(false)
 
 function toggleUserMenu() {
@@ -99,7 +99,8 @@ const userAvatar = computed<string>(() => {
 })
 
 const userRoleLabel = computed(() => {
-  switch (user.value?.role) {
+  const role = profile.value?.role || user.value?.user_metadata?.role || 'user'
+  switch (role) {
     case 'admin': return 'Администратор'
     case 'manager': return 'Менеджер'
     case 'agent': return 'Агент'

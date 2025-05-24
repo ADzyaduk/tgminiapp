@@ -1,13 +1,17 @@
 export default defineNuxtRouteMiddleware((to, from) => {
-  const { user, loading } = useAuth()
+  // Выполняем только на клиенте
+  if (process.server) return
+
+  const { isLoggedIn, initializing } = useAuth()
   
-  // Если еще загружается, ждем
-  if (loading.value) {
+  // Ждем инициализации аутентификации
+  if (initializing.value) {
+    // Можно показать загрузку или просто подождать
     return
   }
   
-  // Если пользователь не авторизован, редиректим на логин
-  if (!user.value) {
+  // Если пользователь не авторизован, перенаправляем на логин
+  if (!isLoggedIn.value) {
     return navigateTo('/login')
   }
 }) 

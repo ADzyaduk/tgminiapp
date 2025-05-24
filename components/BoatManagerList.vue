@@ -206,7 +206,7 @@ const removeManager = async () => {
   
   try {
     isRemoving.value = true
-    console.log('Удаление менеджера:', managerToRemove.value.id)
+    
     
     const { error } = await $supabase
       .from('boat_managers')

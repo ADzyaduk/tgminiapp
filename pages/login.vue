@@ -48,17 +48,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useToast, useSupabaseClient } from '#imports'
+import { useToast } from '#imports'
 import { useAuth } from '~/composables/useAuth'
 
-interface LoginForm { email: string; password: string }
+interface LoginForm { 
+  email: string
+  password: string 
+}
 
-const supabaseClient = useSupabaseClient()
 const router = useRouter()
 const toast = useToast()
-const { fetchUser, user } = useAuth()
+const { signIn, isLoggedIn } = useAuth()
 
 const form = ref<LoginForm>({ email: '', password: '' })
 const errors = ref<Partial<Record<keyof LoginForm, string>>>({})
@@ -67,6 +69,13 @@ const loading = ref(false)
 const isValid = computed(() => {
   return form.value.email.trim() !== '' && form.value.password.trim().length >= 6
 })
+
+// Перенаправляем если уже авторизован
+watch(isLoggedIn, (newValue) => {
+  if (newValue) {
+    router.push('/')
+  }
+}, { immediate: true })
 
 async function handleLogin() {
   errors.value = {}
@@ -78,36 +87,15 @@ async function handleLogin() {
 
   loading.value = true
   try {
-    const { data, error } = await supabaseClient.auth.signInWithPassword({
-      email: form.value.email,
-      password: form.value.password,
-    })
+    const result = await signIn(form.value.email, form.value.password)
     
-    if (error) throw error
-    
-    // Используем сессию из ответа напрямую
-    if (data.session?.user) {
-      // Вручную сохраняем токен если Supabase не сохранил автоматически
-      if (!localStorage.getItem('supabase.auth.token') && data.session) {
-        localStorage.setItem('supabase.auth.token', JSON.stringify({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-          expires_at: data.session.expires_at,
-          user: data.session.user
-        }))
-      }
-      
-      // Устанавливаем состояние пользователя сразу
-      const { fetchUserProfile } = useAuth()
-      await fetchUserProfile(data.session.user.id)
+    if (!result.success) {
+      throw new Error(result.error)
     }
     
     toast.add({ title: 'Успешный вход!', color: 'success' })
     
-    // Добавляем небольшую задержку перед редиректом
-    setTimeout(() => {
-      router.push('/')
-    }, 500)
+    // Перенаправление произойдет автоматически через watcher
   } catch (err: any) {
     console.error('Login error:', err)
     toast.add({ title: 'Ошибка входа', description: err.message, color: 'error' })

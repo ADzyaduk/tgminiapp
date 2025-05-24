@@ -20,7 +20,7 @@
         variant="solid"
       />
       <template v-else-if="boat">
-        <BoatInfo :boat="boat" :user="user" />
+        <BoatInfo :boat="boat" :user="userWithProfile" />
   
         <ClientOnly>
           <UTabs v-model="activeTabKey" :items="tabItems" class="mt-6">
@@ -29,7 +29,7 @@
               <div v-if="item.value === 'rental'">
                 <BookingCalendar
                   :boat="boat"
-                  :user="user"
+                  :user="userWithProfile"
                   :boatId="boat.id"
                   @bookingCreated="refreshBoat"
                 />
@@ -90,12 +90,21 @@
     layout: 'default'
   })
   
-  const { user, isAdmin, loading: authLoading, signOut } = useAuth()
+  const { user, profile, isAdmin, signOut } = useAuth()
   const { boat, loading: boatLoading, error: boatError, fetchBoat } = useBoat()
   const { isManager } = useManager(
     computed(() => user.value?.id ?? null),
     computed(() => boat.value?.id ?? null)
   )
+
+  // Объединяем данные пользователя с профилем
+  const userWithProfile = computed(() => {
+    if (!user.value) return null
+    return {
+      ...user.value,
+      role: profile.value?.role || user.value.user_metadata?.role || 'user'
+    }
+  })
   
   // Active tab keys
   const activeTabKey = ref('rental')

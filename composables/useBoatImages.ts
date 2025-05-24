@@ -4,11 +4,12 @@ import type { BoatRow } from '~/types/boats'
 
 /**
  * Глобальный импорт всех изображений лодок через Vite.
- * as: 'url' — сразу получаем URL, eager: true — синхронно.
+ * query: '?url' — сразу получаем URL, eager: true — синхронно.
  */
 const allBoatImages = import.meta.glob('@/assets/boats/*/*.{png,jpg,jpeg}', {
   eager: true,
-  as: 'url',
+  query: '?url',
+  import: 'default',
 })
 
 export function useBoatImages(boat: BoatRow | { slug: string, name?: string } | any) {

@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
     try {
       user = await serverSupabaseUser(event)
     } catch (error) {
-      console.log('Non-authenticated booking request', error)
+
     }
 
     // Подключаемся к Supabase

@@ -95,6 +95,15 @@
           />
         </UFormField>
 
+        <!-- Поле телефона для неавторизованных пользователей и пользователей с ролью 'user' -->
+        <UFormField v-if="needsPhoneField" label="Телефон" required>
+          <UInput 
+            v-model.trim="guestPhone"
+            class="w-full"
+            placeholder="+7 (___) ___-__-__"
+          />
+        </UFormField>
+
         <UFormField label="Количество человек">
           <UInput 
             type="number" 
@@ -196,6 +205,7 @@ const { $toast: toast } = useNuxtApp()
 const selectedSlot  = ref<number|null>(null)
 const duration      = ref(1)
 const guestName     = ref('')
+const guestPhone    = ref('')
 const peopleCount   = ref(1)
 const bookedSlots   = ref<number[]>([])
 const pph           = ref(0)
@@ -228,10 +238,22 @@ const formattedDate = computed(() => {
 })
 
 // Определение роли пользователя
-const isAdmin = computed(() => props.user?.role === 'admin')
-const isAgent = computed(() => props.user?.role === 'agent')
-const isManager = computed(() => props.user?.role === 'manager')
+const getUserRole = computed(() => {
+  if (!props.user) return null
+  return props.user.role || props.user.user_metadata?.role
+})
+
+const isAdmin = computed(() => getUserRole.value === 'admin')
+const isAgent = computed(() => getUserRole.value === 'agent')
+const isManager = computed(() => getUserRole.value === 'manager')
 const isAdminOrAgentOrManager = computed(() => isAdmin.value || isAgent.value || isManager.value)
+
+// Нужно ли поле телефона (для неавторизованных или пользователей с ролью 'user')
+const needsPhoneField = computed(() => {
+  if (!props.user) return true // Неавторизованный пользователь
+  const role = getUserRole.value
+  return !role || role === 'user' // Пользователь без роли или с ролью 'user'
+})
 
 // Цена на основе роли пользователя
 const displayedPrice = computed(() => {
@@ -307,6 +329,7 @@ const canBook = computed(() =>
   (selectedSlot.value !== null || isManualTimeSelected.value) &&
   (isManualTimeSelected.value || duration.value >= 1) &&
   guestName.value.trim() !== '' &&
+  (!needsPhoneField.value || guestPhone.value.trim() !== '') &&
   peopleCount.value > 0 &&
   !isTimeConflict.value
 )
@@ -487,6 +510,7 @@ async function bookSlot() {
       peoples:    peopleCount.value,
       status:     'pending',
       guest_name: guestName.value.trim(),
+      guest_phone: needsPhoneField.value ? guestPhone.value.trim() : null,
       guest_note: guestNote.value,
       prepayment: isAdminOrAgentOrManager.value ? prepayment.value : null
     } as const
@@ -532,6 +556,7 @@ function resetForm() {
   manualEndTime.value = ''
   duration.value = 1
   guestName.value = ''
+  guestPhone.value = ''
   peopleCount.value = 1
   pph.value = 0
   prepayment.value = 0

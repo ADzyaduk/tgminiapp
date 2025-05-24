@@ -44,13 +44,37 @@
       <!-- Галерея -->
       <div class="space-y-2">
         <!-- Основное изображение -->
-        <div v-if="primaryImage" class="relative h-64 md:h-72 rounded-lg overflow-hidden">
+        <div v-if="primaryImage" class="relative h-64 md:h-72 rounded-lg overflow-hidden group">
           <img
+            ref="mainImage"
             :src="currentImage || primaryImage"
             :alt="boat?.name || 'Фото лодки'"
-            class="w-full h-full object-cover"
+            :class="imageDisplayClass"
+            class="w-full h-full transition-all duration-300"
             loading="lazy"
+            @load="onImageLoad"
+            @click="toggleImageFit"
           />
+          
+          <!-- Индикатор режима просмотра и отладочная информация -->
+          <div class="absolute top-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+            <div>{{ imageFitMode === 'cover' ? 'Обрезка' : 'Полное' }}</div>
+            <div v-if="imageAspectRatio" class="text-xs opacity-75">
+              {{ imageAspectRatio.toFixed(2) }} 
+              {{ imageAspectRatio < 1 ? '📱' : imageAspectRatio > 1.5 ? '🖼️' : '⬜' }}
+            </div>
+          </div>
+          
+
+          
+          <!-- Кнопка переключения режима -->
+          <button
+            @click="toggleImageFit"
+            class="absolute bottom-2 right-2 bg-black/70 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/90"
+            title="Переключить режим отображения"
+          >
+            <UIcon :name="imageFitMode === 'cover' ? 'i-heroicons-arrows-pointing-out' : 'i-heroicons-arrows-pointing-in'" class="w-4 h-4" />
+          </button>
         </div>
         <div v-else class="relative h-64 md:h-72 rounded-lg overflow-hidden bg-muted flex items-center justify-center">
           <UIcon name="i-heroicons-photo" class="text-muted w-16 h-16" />
@@ -61,11 +85,16 @@
           <div 
             v-for="(img, index) in images" 
             :key="index"
-            class="relative w-16 h-16 rounded-md overflow-hidden cursor-pointer flex-shrink-0 border-2"
+            class="relative w-16 h-16 rounded-md overflow-hidden cursor-pointer flex-shrink-0 border-2 hover:border-primary-300 transition-colors"
             :class="currentImage === img ? 'border-primary-500' : 'border-transparent'"
-            @click="currentImage = img"
+            @click="selectThumbnail(img)"
           >
-            <img :src="img" :alt="`${boat?.name} фото ${index + 1}`" class="w-full h-full object-cover" loading="lazy" />
+            <img 
+              :src="img" 
+              :alt="`${boat?.name} фото ${index + 1}`" 
+              class="w-full h-full object-cover hover:scale-105 transition-transform" 
+              loading="lazy" 
+            />
           </div>
         </div>
       </div>
@@ -109,6 +138,7 @@ import type { Database } from '~~/types/supabase'
 import { useBoatImages } from '~/composables/useBoatImages'
 import { useBoatSpecs } from '~/composables/useBoatSpecs'
 import { useBoatFormatting } from '~/composables/useBoatFormatting'
+import { useImageAnalyzer } from '~/composables/useImageAnalyzer'
 import { computed, ref, onMounted, watch } from 'vue'
 import { useSupabaseClient } from '#imports'
 
@@ -132,6 +162,9 @@ const isLoadingRating = ref(true)
 
 // Состояние
 const currentImage = ref<string | null>(null)
+const imageFitMode = ref<'cover' | 'contain'>('cover')
+const imageAspectRatio = ref<number | null>(null)
+const mainImage = ref<HTMLImageElement | null>(null)
 
 // Composables
 const { primary: primaryImage, images } = useBoatImages(props.boat)
@@ -142,11 +175,13 @@ const {
   Number(props.boat?.price || 0),
   Number(props.boat?.agent_price || 0)
 )
+const { formatDebugInfo, recommendDisplayMode, getOptimalPosition } = useImageAnalyzer()
 
 // Computed
 const isAgentOrAdmin = computed(() => {
-  if (!props.user?.role) return false
-  return ['admin', 'agent', 'manager'].includes(props.user.role as string)
+  if (!props.user) return false
+  const userRole = props.user.role || props.user.user_metadata?.role
+  return ['admin', 'agent', 'manager'].includes(userRole as string)
 })
 
 const userPrice = computed(() => {
@@ -156,6 +191,34 @@ const userPrice = computed(() => {
   
   const price = isAgentOrAdmin.value ? agentPrice : regularPrice
   return format(price)
+})
+
+// Computed для класса отображения изображения
+const imageDisplayClass = computed(() => {
+  const baseClasses = []
+  
+  if (imageFitMode.value === 'contain') {
+    baseClasses.push('object-contain')
+    // Для contain добавляем фон чтобы не было пустого пространства
+    baseClasses.push('bg-gray-100 dark:bg-gray-800')
+  } else {
+    baseClasses.push('object-cover')
+    
+    // Используем анализатор для оптимального позиционирования
+    if (imageAspectRatio.value) {
+      const debugInfo = formatDebugInfo(
+        mainImage.value?.naturalWidth || 0, 
+        mainImage.value?.naturalHeight || 0
+      )
+      baseClasses.push(debugInfo.position)
+    } else {
+      baseClasses.push('object-center')
+    }
+  }
+  
+  baseClasses.push('cursor-pointer')
+  
+  return baseClasses.join(' ')
 })
 
 // Функция для загрузки рейтинга
@@ -211,5 +274,35 @@ function reviewTextPlural(count: number): string {
     return 'отзывов';
   }
 }
+
+// Функция для обработки загрузки изображения
+function onImageLoad() {
+  if (mainImage.value) {
+    const { naturalWidth, naturalHeight } = mainImage.value
+    imageAspectRatio.value = naturalWidth / naturalHeight
+    
+    // Используем анализатор для автоматического выбора режима
+    const recommendation = recommendDisplayMode(imageAspectRatio.value)
+    imageFitMode.value = recommendation.mode
+    
+
+  }
+}
+
+// Функция для переключения режима отображения
+function toggleImageFit() {
+  imageFitMode.value = imageFitMode.value === 'cover' ? 'contain' : 'cover'
+}
+
+// Функция для выбора миниатюры
+function selectThumbnail(img: string) {
+  currentImage.value = img
+}
+
+// Watch для сброса настроек при смене изображения
+watch(currentImage, () => {
+  imageFitMode.value = 'cover'
+  imageAspectRatio.value = null
+}, { immediate: true })
 
 </script>
