@@ -99,12 +99,12 @@
                   </div>
                 </div>
                 
-                <div class="flex items-center gap-2 self-end md:self-center">
+                <div class="flex flex-col md:flex-row items-stretch md:items-center gap-2 self-end md:self-center">
                   <!-- Show action buttons only for active trips -->
                   <template v-if="trip.status !== 'completed' && trip.status !== 'cancelled'">
                     <UButton
                       v-if="trip.status === 'scheduled'"
-                      color="orange"
+                      color="primary" 
                       variant="soft"
                       icon="i-heroicons-play"
                       @click="startTrip(trip)"
@@ -113,7 +113,7 @@
                     </UButton>
                     <UButton
                       v-if="trip.status === 'in_progress'"
-                      color="green"
+                      color="primary" 
                       variant="soft"
                       icon="i-heroicons-check"
                       @click="completeTrip(trip)"
@@ -122,7 +122,7 @@
                     </UButton>
                     <UButton
                       v-if="['scheduled', 'in_progress'].includes(trip.status)"
-                      color="red"
+                      color="error" 
                       variant="soft"
                       icon="i-heroicons-x-mark"
                       @click="cancelTrip(trip)"
@@ -158,7 +158,7 @@
                       <!-- Кнопки сохранения/отмены (показываются только при изменениях) -->
                       <div v-if="hasUnsavedChanges(trip)" class="flex gap-1">
                         <UButton
-                          color="green"
+                          color="primary" 
                           variant="soft"
                           icon="i-heroicons-check"
                           size="xs"
@@ -166,7 +166,7 @@
                           title="Сохранить изменения"
                         />
                         <UButton
-                          color="red"
+                          color="error" 
                           variant="soft"
                           icon="i-heroicons-x-mark"
                           size="xs"

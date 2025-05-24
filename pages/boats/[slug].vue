@@ -55,6 +55,9 @@
               <div v-if="item.value === 'bookings'">
                 <BookingsManager :boatId="boat.id" @boatUpdated="refreshBoat" />
               </div>
+              <div v-else-if="item.value === 'groupTripBookings'">
+                <GroupTripBookingsManager :boatId="boat.id" />
+              </div>
               
               <!-- Управление групповыми поездками -->
               <div v-else-if="item.value === 'groupTrips'">
@@ -85,6 +88,7 @@
   import RatingSystem from '~/components/RatingSystem.vue'
   import GroupTripList from '~/components/GroupTripList.vue'
   import GroupTripManager from '~/components/GroupTripManager.vue'
+  import GroupTripBookingsManager from '~/components/GroupTripBookingsManager.vue'
   
   definePageMeta({
     layout: 'default'
@@ -118,6 +122,7 @@
   
   const managerTabs = [
     { key: 'bookings', label: 'Управление бронированиями', icon: 'i-heroicons-calendar' },
+    { key: 'groupTripBookings', label: 'Бронирования групп', icon: 'i-heroicons-ticket' },
     { key: 'groupTrips', label: 'Управление групповыми поездками', icon: 'i-heroicons-users' }
   ]
   

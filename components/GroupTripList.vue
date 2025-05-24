@@ -1,146 +1,197 @@
 <template>
   <div class="group-trip-list">
+    <!-- Loading state -->
     <div v-if="loading" class="flex justify-center py-8">
       <UProgress animation="carousel" />
     </div>
     
+    <!-- Trip cards -->
     <div v-else>
-      <div v-if="bookableTrips.length" class="space-y-4">
-        <TransitionGroup name="list">
+      <div v-if="bookableTrips.length > 0" class="space-y-4">
+        <TransitionGroup
+          tag="div"
+          name="trip-list"
+          class="space-y-4"
+        >
           <UCard
             v-for="trip in bookableTrips"
             :key="trip.id"
-            class="border-l-4 border-green-500 transition-transform duration-300 hover:shadow-lg cursor-pointer"
-            @click="selectTrip(trip)"
+            class="hover:shadow-lg transition-shadow duration-200"
           >
-            <div class="flex flex-col md:flex-row md:items-start justify-between gap-4 p-4">
-              <!-- Boat images -->
-              <div class="w-full md:w-64 flex-shrink-0">
-                <!-- Изображение лодки -->
-                <img 
-                  :src="getBoatImage(trip.boat)" 
-                  :alt="trip.boat?.name || 'Лодка'"
-                  class="w-full h-48 object-cover rounded-lg"
-                />
-                
-                <!-- Рейтинг -->
-                <div class="mt-2 flex items-center">
-                  <div class="flex items-center">
-                    <span class="flex items-center">
-                      <UIcon name="i-heroicons-star" class="text-yellow-400 mr-1" />
-                      <span class="font-medium">{{ getBoatRating(trip.boat_id) }}</span>
-                    </span>
-                    <span class="text-sm text-gray-500 ml-2">
-                      ({{ getReviewCount(trip.boat_id) }} отзывов)
-                    </span>
-                  </div>
+            <div class="p-4">
+              <div class="flex flex-col md:flex-row gap-4">
+                <!-- Boat image -->
+                <div class="w-full md:w-32 h-32 flex-shrink-0">
+                  <img 
+                    :src="getBoatImage(trip.boat)" 
+                    :alt="trip.boat?.name || 'Лодка'"
+                    class="w-full h-full object-cover rounded-lg"
+                  />
                 </div>
-              </div>
-              
-              <div class="flex-1">
-                <div class="flex items-start gap-3">
-                  <UIcon name="i-heroicons-user-group" class="text-2xl text-blue-500 flex-shrink-0" />
-                  <div>
-                    <h3 class="font-medium">
-                      Групповая поездка
-                      <span v-if="trip.boat?.name" class="text-gray-600">
-                        на лодке "{{ trip.boat.name }}"
-                      </span>
-                    </h3>
-                    
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      <UBadge color="primary" variant="subtle">
-                        осталось {{ trip.available_seats }} мест
-                      </UBadge>
-                      <UBadge color="success" variant="subtle">
-                        Взрослый: {{ formatPrice(trip.adult_price) }}
-                      </UBadge>
-                      <UBadge color="success" variant="subtle">
-                        Ребенок: {{ formatPrice(trip.child_price) }}
-                      </UBadge>
-                      <UBadge color="warning" variant="subtle">
-                        {{ getGroupStatusText(trip) }}
-                      </UBadge>
-                    </div>
-                    
-                    <p v-if="trip.description" class="mt-2 text-sm text-gray-600">
-                      {{ truncateText(trip.description, 150) }}
-                    </p>
-                    
-                    <div class="mt-4 flex items-center gap-2">
-                      <!-- Управление для менеджеров -->
-                      <div v-if="isManagerForBoat(trip.boat_id)" class="flex flex-wrap gap-2">
-                        <UButton
-                          color="orange"
-                          variant="soft"
-                          icon="i-heroicons-play"
-                          size="sm"
-                          @click.stop="startTrip(trip)"
-                        >
-                          Отправить
-                        </UButton>
-                        <!-- Inline редактирование мест -->
-                        <div v-if="isManagerForBoat(trip.boat_id)" class="flex items-center gap-2">
-                          <UButtonGroup size="sm">
-                            <UButton
-                              color="gray"
-                              variant="soft"
-                              icon="i-heroicons-minus"
-                              @click.stop="adjustSeats(trip, -1)"
-                              :disabled="editingSeats[trip.id] ? editingSeats[trip.id].current <= 0 : trip.available_seats <= 0"
-                            />
-                            <UInput
-                              :model-value="editingSeats[trip.id] ? editingSeats[trip.id].current : trip.available_seats"
-                              readonly
-                              class="w-16 text-center"
-                              :class="hasUnsavedChanges(trip) ? 'ring-2 ring-yellow-400' : ''"
-                              size="sm"
-                            />
-                            <UButton
-                              color="gray"
-                              variant="soft"
-                              icon="i-heroicons-plus"
-                              @click.stop="adjustSeats(trip, 1)"
-                              :disabled="editingSeats[trip.id] ? editingSeats[trip.id].current >= trip.total_seats : trip.available_seats >= trip.total_seats"
-                            />
-                          </UButtonGroup>
-                          
-                          <!-- Кнопки сохранения/отмены (показываются только при изменениях) -->
-                          <div v-if="hasUnsavedChanges(trip)" class="flex gap-1">
-                            <UButton
-                              color="green"
-                              variant="soft"
-                              icon="i-heroicons-check"
-                              size="xs"
-                              @click.stop="saveSeats(trip)"
-                              title="Сохранить изменения"
-                            />
-                            <UButton
-                              color="red"
-                              variant="soft"
-                              icon="i-heroicons-x-mark"
-                              size="xs"
-                              @click.stop="cancelEditingSeats(trip.id)"
-                              title="Отменить изменения"
-                            />
-                          </div>
+
+                <!-- Trip info -->
+                <div class="flex-1">
+                  <div class="flex items-start gap-3">
+                    <UIcon name="i-heroicons-user-group" class="text-2xl text-blue-500 flex-shrink-0" />
+                    <div>
+                      <h3 class="font-medium">
+                        Групповая поездка
+                        <span v-if="trip.boat?.name" class="text-gray-600">
+                          на лодке "{{ trip.boat.name }}"
+                        </span>
+                      </h3>
+                      
+                      <div class="mt-2 flex flex-wrap gap-2">
+                        <UBadge color="primary" variant="subtle">
+                          осталось {{ trip.available_seats }} мест
+                        </UBadge>
+                        <UBadge color="success" variant="subtle">
+                          Взрослый: {{ formatPrice(trip.adult_price) }}
+                        </UBadge>
+                        <UBadge color="success" variant="subtle">
+                          Ребенок: {{ formatPrice(trip.child_price) }}
+                        </UBadge>
+                        <UBadge color="warning" variant="subtle">
+                          {{ getGroupStatusText(trip) }}
+                        </UBadge>
+                      </div>
+                      
+                      <p v-if="trip.description" class="mt-2 text-sm text-gray-600">
+                        {{ truncateText(trip.description, 150) }}
+                      </p>
+                      
+                      <!-- Date and time info -->
+                      <div class="mt-3 flex flex-wrap gap-4 text-sm text-gray-500">
+                        <div class="flex items-center gap-1">
+                          <UIcon name="i-heroicons-calendar-days" />
+                          <span>{{ formatDate(trip.start_time) }}</span>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
+
+                <!-- Кнопка Забронировать / Открыть форму -->
+                <div class="mt-4 md:mt-0 flex flex-col items-stretch md:items-end gap-2">
+                  <UButton
+                    v-if="trip.status === 'scheduled' && trip.available_seats > 0 && !isBoatManager(trip.boat_id)" 
+                    icon="i-heroicons-ticket"
+                    size="md"
+                    class="w-full md:w-auto"
+                    @click="toggleBookingForm(trip.id)"
+                  >
+                    Забронировать
+                  </UButton>
+                  <UButton
+                    v-else-if="trip.status === 'scheduled' && trip.available_seats === 0 && !isBoatManager(trip.boat_id)"
+                    icon="i-heroicons-no-symbol"
+                    size="md"
+                    class="w-full md:w-auto"
+                    color="gray"
+                    disabled
+                  >
+                    Мест нет
+                  </UButton>
+
+                  <!-- MANAGER CONTROLS START -->
+                  <div 
+                    v-if="isBoatManager(trip.boat_id)" 
+                    class="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 md:border-none md:pt-0 md:mt-0 flex flex-col md:flex-row items-stretch md:items-center gap-2 self-stretch md:self-end flex-wrap justify-end"
+                  >
+                    <template v-if="trip.status !== 'completed' && trip.status !== 'cancelled'">
+                      <UButton
+                        v-if="trip.status === 'scheduled'"
+                        color="primary" 
+                        variant="soft"
+                        icon="i-heroicons-play"
+                        @click="startTrip(trip)"
+                        class="w-full sm:w-auto"
+                        size="sm"
+                      >
+                        Отправить
+                      </UButton>
+                      <UButton
+                        v-if="trip.status === 'in_progress'"
+                        color="primary"  
+                        variant="soft"
+                        icon="i-heroicons-check"
+                        @click="completeTrip(trip)" 
+                        class="w-full sm:w-auto"
+                        size="sm"
+                        title="Завершить поездку" 
+                      >
+                        Завершить
+                      </UButton>
+                      <UButton
+                        v-if="['scheduled', 'in_progress'].includes(trip.status)"
+                        color="error" 
+                        variant="soft"
+                        icon="i-heroicons-x-mark"
+                        @click="cancelTrip(trip)"
+                        class="w-full sm:w-auto"
+                        size="sm"
+                      >
+                        Отменить
+                      </UButton>
+                      
+                      <!-- Inline редактирование мест -->
+                      <div v-if="['scheduled'].includes(trip.status)" class="flex items-center gap-1 sm:gap-2 justify-end sm:justify-start flex-wrap">
+                        <UButtonGroup size="xs">
+                          <UButton
+                            color="gray"
+                            variant="soft"
+                            icon="i-heroicons-minus"
+                            @click="adjustSeats(trip, -1)"
+                            :disabled="editingSeats[trip.id] ? editingSeats[trip.id].current <= 0 : trip.available_seats <= 0"
+                          />
+                          <UInput
+                            :model-value="editingSeats[trip.id] ? editingSeats[trip.id].current : trip.available_seats"
+                            readonly
+                            class="w-12 text-center"
+                            :class="hasUnsavedChanges(trip) ? 'ring-1 ring-yellow-400' : ''"
+                            size="xs"
+                          />
+                          <UButton
+                            color="gray"
+                            variant="soft"
+                            icon="i-heroicons-plus"
+                            @click="adjustSeats(trip, 1)"
+                            :disabled="editingSeats[trip.id] ? editingSeats[trip.id].current >= trip.total_seats : trip.available_seats >= trip.total_seats"
+                          />
+                        </UButtonGroup>
+                        
+                        <div v-if="hasUnsavedChanges(trip)" class="flex gap-1">
+                          <UButton
+                            color="primary" 
+                            variant="soft"
+                            icon="i-heroicons-check"
+                            size="2xs" 
+                            @click="saveSeats(trip)"
+                            title="Сохранить изменения мест"
+                          />
+                          <UButton
+                            color="error" 
+                            variant="soft"
+                            icon="i-heroicons-x-mark"
+                            size="2xs" 
+                            @click="cancelEditingSeats(trip.id)"
+                            title="Отменить изменения мест"
+                          />
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                  <!-- MANAGER CONTROLS END -->
+                </div>
               </div>
               
-              <div class="flex items-center gap-2 self-end md:self-center">
-                <!-- Кнопка бронирования для всех -->
-                <UButton
-                  color="primary"
-                  icon="i-heroicons-ticket"
-                  @click.stop="bookTrip(trip)"
-                  :disabled="trip.available_seats === 0"
-                >
-                  {{ trip.available_seats > 0 ? 'Забронировать' : 'Нет мест' }}
-                </UButton>
+              <!-- Встроенная форма бронирования -->
+              <div v-if="expandedBookingForms[trip.id]" class="border-t border-gray-100 pt-4 mt-4">
+                <GroupTripBookingFormInline
+                  :trip="trip"
+                  @cancel="hideBookingForm(trip.id)"
+                  @success="onBookingSuccess"
+                />
               </div>
             </div>
           </UCard>
@@ -155,16 +206,6 @@
         </p>
       </div>
     </div>
-    
-    <!-- Booking Modal -->
-    <UModal v-model="isBookingModalOpen">
-      <GroupTripBookingForm
-        v-if="selectedTrip"
-        :trip="selectedTrip"
-        @cancel="isBookingModalOpen = false"
-        @success="onBookingSuccess"
-      />
-    </UModal>
   </div>
 </template>
 
@@ -177,8 +218,9 @@ import { useGroupTripsStore } from '~/stores/groupTrips'
 import { useBoatImages } from '~/composables/useBoatImages'
 import { useAuth } from '~/composables/useAuth'
 import { useManager } from '~/composables/useManager'
+import GroupTripBookingFormInline from './GroupTripBookingFormInline.vue'
 
-// Optional filter by boat
+// Props
 const props = defineProps({
   boatId: {
     type: String,
@@ -192,95 +234,23 @@ const supabaseClient = useSupabaseClient()
 const toast = useToast()
 const groupTripsStore = useGroupTripsStore()
 
-// Auth и права менеджера
-const { user } = useAuth()
+// Auth
+const { user, isAdmin } = useAuth()
 
-// Стейт
+// Состояние
 const loading = ref(true)
-const isBookingModalOpen = ref(false)
-const selectedTrip = ref(null)
 const boatRatings = ref({})
 const boatReviews = ref({})
-
-// Стейт для редактирования мест
 const editingSeats = ref({})
+const expandedBookingForms = ref({})
 
-// Загрузка рейтингов из отзывов
-const loadBoatReviews = async () => {
-  try {
-    const { data, error } = await supabaseClient
-      .from('reviews')
-      .select('boat_id, rating')
-    
-    if (error) throw error
-    
-    // Рассчитываем средний рейтинг и количество отзывов для каждой лодки
-    const ratings = {}
-    const reviewCounts = {}
-    
-    if (data) {
-      data.forEach(review => {
-        const boatId = review.boat_id
-        
-        if (!ratings[boatId]) {
-          ratings[boatId] = 0
-          reviewCounts[boatId] = 0
-        }
-        
-        if (review.rating) {
-          ratings[boatId] += review.rating
-          reviewCounts[boatId]++
-        }
-      })
-      
-      // Рассчитываем средний рейтинг
-      Object.keys(ratings).forEach(boatId => {
-        if (reviewCounts[boatId] > 0) {
-          ratings[boatId] = ratings[boatId] / reviewCounts[boatId]
-        }
-      })
-    }
-    
-    boatRatings.value = ratings
-    boatReviews.value = reviewCounts
-  } catch (error) {
-    console.error('Ошибка при загрузке рейтингов:', error)
-  }
-}
-
-// Получить рейтинг для лодки
-const getBoatRating = (boatId) => {
-  const rating = boatRatings.value[boatId]
-  return rating ? rating.toFixed(1) : '0.0'
-}
-
-// Получить количество отзывов для лодки
-const getReviewCount = (boatId) => {
-  return boatReviews.value[boatId] || 0
-}
-
-// Проверка прав менеджера для лодки
-function isManagerForBoat(boatId) {
-  if (!user.value) return false;
-  if (user.value.role === 'admin') return true;
-  
-  // Проверка является ли пользователь менеджером лодки
-  const { isManager } = useManager(
-    computed(() => user.value?.id ?? null),
-    computed(() => boatId ?? null)
-  );
-  
-  return isManager.value;
-}
-
-// Use the shared state from the Pinia store
+// Computed свойства
 const bookableTrips = computed(() => {
   const trips = groupTripsStore.bookableTrips
-  // Filter by boat ID if provided
   return props.boatId ? trips.filter(trip => trip.boat_id === props.boatId) : trips
 })
 
-// Load available trips using the Pinia store
+// Загрузка доступных поездок
 const loadBookableTrips = async () => {
   try {
     loading.value = true
@@ -302,18 +272,31 @@ const loadBookableTrips = async () => {
   }
 }
 
-// Helper methods
+// Управление встроенными формами бронирования
+const toggleBookingForm = (tripId) => {
+  expandedBookingForms.value[tripId] = !expandedBookingForms.value[tripId]
+}
+
+const hideBookingForm = (tripId) => {
+  expandedBookingForms.value[tripId] = false
+}
+
+const onBookingSuccess = (booking) => {
+  // Скрыть все формы бронирования
+  Object.keys(expandedBookingForms.value).forEach(tripId => {
+    expandedBookingForms.value[tripId] = false
+  })
+  
+  // Обновить список поездок
+  loadBookableTrips()
+  
+  emit('bookingSuccess', booking)
+}
+
+// Вспомогательные функции
 const formatDate = (dateString) => {
   try {
     return format(parseISO(dateString), 'dd MMMM yyyy', { locale: ru })
-  } catch (e) {
-    return dateString
-  }
-}
-
-const formatTime = (dateString) => {
-  try {
-    return format(parseISO(dateString), 'HH:mm', { locale: ru })
   } catch (e) {
     return dateString
   }
@@ -329,8 +312,7 @@ const truncateText = (text, maxLength) => {
   return text.substring(0, maxLength) + '...'
 }
 
-// Получение одного изображения лодки
-function getBoatImage(boat) {
+const getBoatImage = (boat) => {
   if (boat && boat.slug) {
     const { primary } = useBoatImages(boat);
     if (primary.value) return primary.value;
@@ -338,7 +320,6 @@ function getBoatImage(boat) {
   return '/images/default-boat.jpg';
 }
 
-// Helper to get group status text based on available seats
 const getGroupStatusText = (trip) => {
   const filledPercentage = 100 - (trip.available_seats / trip.total_seats * 100);
   
@@ -353,51 +334,10 @@ const getGroupStatusText = (trip) => {
   }
 }
 
-// Select trip for booking
-const selectTrip = (trip) => {
-  selectedTrip.value = trip
-  groupTripsStore.setActiveTrip(trip) // Set active trip in the Pinia store
-  isBookingModalOpen.value = true
-  emit('tripSelected', trip)
-}
-
-// Alias for booking directly
-const bookTrip = selectTrip
-
-// Handle successful booking
-const onBookingSuccess = (booking) => {
-  isBookingModalOpen.value = false
-  
-  // Refresh trips after booking
+// Инициализация при монтировании
+onMounted(() => {
   loadBookableTrips()
-  
-  emit('bookingSuccess', booking)
-}
-
-// Функции управления поездками для менеджеров
-const startTrip = async (trip) => {
-  try {
-    const { error } = await groupTripsStore.startTrip(trip.id)
-    
-    if (error) throw error
-    
-    toast.add({
-      title: 'Успешно',
-      description: 'Лодка отправлена, поездка началась',
-      color: 'success'
-    })
-    
-    // Обновить список поездок
-    await loadBookableTrips()
-  } catch (error) {
-    console.error('Error starting trip:', error)
-    toast.add({
-      title: 'Ошибка',
-      description: 'Не удалось начать поездку',
-      color: 'error'
-    })
-  }
-}
+})
 
 // Инициализация редактирования мест для поездки
 const startEditingSeats = (trip) => {
@@ -414,9 +354,10 @@ const adjustSeats = (trip, delta) => {
     startEditingSeats(trip)
   }
   
-  const newValue = editingSeats.value[trip.id].current + delta
-  if (newValue >= 0 && newValue <= trip.total_seats) {
-    editingSeats.value[trip.id].current = newValue
+  const newValue = editingSeats.value[trip.id].current + delta;
+  // Убедимся, что newValue не становится отрицательным или больше total_seats
+  if (newValue >= 0 && newValue <= trip.total_seats) { 
+    editingSeats.value[trip.id].current = newValue;
   }
 }
 
@@ -434,26 +375,28 @@ const saveSeats = async (trip) => {
   }
   
   try {
-    const { error } = await groupTripsStore.updateTripSeats(trip.id, editing.current)
+    // Убедимся, что editing.current это число
+    const seatsToUpdate = parseInt(editing.current);
+    if (isNaN(seatsToUpdate)) {
+      throw new Error('Количество мест должно быть числом.');
+    }
+
+    const { error } = await groupTripsStore.updateTripSeats(trip.id, seatsToUpdate)
     
     if (error) throw error
     
     toast.add({
       title: 'Успешно',
-      description: `Количество мест изменено на ${editing.current}`,
+      description: `Количество мест изменено на ${seatsToUpdate}`,
       color: 'success'
     })
-    
-    // Очищаем состояние редактирования
     cancelEditingSeats(trip.id)
-    
-    // Обновить список поездок
-    await loadBookableTrips()
+    await loadBookableTrips() // Обновить список поездок
   } catch (error) {
     console.error('Error updating seats:', error)
     toast.add({
       title: 'Ошибка',
-      description: 'Не удалось обновить количество мест',
+      description: 'Не удалось обновить количество мест' + (error instanceof Error ? `: ${error.message}` : ''),
       color: 'error'
     })
   }
@@ -465,23 +408,56 @@ const hasUnsavedChanges = (trip) => {
   return editing && editing.current !== editing.original
 }
 
-// Load trips on mount and ratings
-onMounted(async () => {
-  await Promise.all([
-    loadBookableTrips(),
-    loadBoatReviews()
-  ])
-})
+// Проверка, является ли пользователь менеджером данной лодки
+const isBoatManager = (boatId: string) => {
+  if (!user.value) return false
+  if (isAdmin.value) return true // Администратор может управлять всем
+  // Используем composable useManager
+  const { isManager: checkIsManager } = useManager(
+    computed(() => user.value?.id ?? null),
+    computed(() => boatId ?? null) 
+  );
+  return checkIsManager.value
+}
+
+// Функции управления поездкой (start, cancel)
+const startTrip = async (trip) => {
+  try {
+    const { error } = await groupTripsStore.startTrip(trip.id)
+    if (error) throw error
+    toast.add({ title: 'Успешно', description: 'Поездка начата', color: 'success' })
+    await loadBookableTrips() 
+  } catch (err) {
+    toast.add({ title: 'Ошибка', description: 'Не удалось начать поездку', color: 'error' })
+  }
+}
+
+const cancelTrip = async (trip) => {
+  if (!confirm('Вы уверены, что хотите отменить эту поездку?')) return
+  try {
+    const { error } = await groupTripsStore.cancelTrip(trip.id)
+    if (error) throw error
+    toast.add({ title: 'Успешно', description: 'Поездка отменена', color: 'success' })
+    await loadBookableTrips()
+  } catch (err) {
+    toast.add({ title: 'Ошибка', description: 'Не удалось отменить поездку', color: 'error' })
+  }
+}
 </script>
 
 <style scoped>
-.list-enter-active,
-.list-leave-active {
+.trip-list-enter-active,
+.trip-list-leave-active {
   transition: all 0.3s ease;
 }
-.list-enter-from,
-.list-leave-to {
+
+.trip-list-enter-from {
   opacity: 0;
   transform: translateY(20px);
+}
+
+.trip-list-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
 }
 </style> 

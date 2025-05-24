@@ -18,7 +18,13 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
     console.warn('Auth initialization timeout, proceeding anyway')
   }
   
-    if (import.meta.dev) {    console.log('Auth middleware check:', {      hasUser: !!user.value,      userEmail: user.value?.email,      initializing: initializing.value    })  }
+  if (import.meta.dev) {
+    // console.log('Auth middleware check:', {  // Лог удален
+    //   hasUser: !!user.value,
+    //   userEmail: user.value?.email,
+    //   initializing: initializing.value
+    // })
+  }
   
   // Если пользователь не авторизован, перенаправляем на логин
   if (!user.value) {

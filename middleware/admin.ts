@@ -15,8 +15,6 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
     console.warn('Auth initialization timeout, proceeding anyway')
   }
   
-    if (import.meta.dev) {    console.log('Admin middleware check:', {      hasUser: !!user.value,      isAdmin: isAdmin.value,      userEmail: user.value?.email,      initializing: initializing.value    })  }
-  
   // Если пользователь не авторизован, перенаправляем на логин
   if (!user.value) {
     return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`)

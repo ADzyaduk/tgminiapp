@@ -22,7 +22,13 @@
     </UAlert>
     
     <template v-else>
-      <InviteManager />
+      <UCard>
+        <template #header>
+          <h2 class="text-xl font-semibold">Приглашения менеджеров</h2>
+        </template>
+        <p>Раздел управления приглашениями менеджеров. (В разработке)</p>
+        <!-- TODO: Реализовать функционал отображения и управления приглашениями -->
+      </UCard>
     </template>
   </div>
 </template>

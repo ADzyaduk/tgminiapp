@@ -20,9 +20,6 @@
         
         <!-- Действия пользователя -->
         <div class="flex items-center gap-3">
-          <!-- Уведомления -->
-          <NotificationCenter v-if="user" />
-          
           <!-- Профиль пользователя -->
           <div v-if="user" class="relative">
             <UAvatar

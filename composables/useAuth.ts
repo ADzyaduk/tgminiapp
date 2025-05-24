@@ -25,10 +25,6 @@ export const useAuth = () => {
 
   // Инициализация аутентификации
   const initializeAuth = async () => {
-    if (import.meta.dev) {
-      console.log('🔐 Initializing auth...')
-    }
-
     try {
       initializing.value = true
       
@@ -46,22 +42,10 @@ export const useAuth = () => {
         
         // Загружаем профиль пользователя
         await loadProfile()
-        
-        if (import.meta.dev) {
-          console.log('✅ Session restored:', user.value?.email)
-        }
-      } else {
-        if (import.meta.dev) {
-          console.log('ℹ️ No active session found')
-        }
       }
 
       // Слушаем изменения состояния авторизации
       supabase.auth.onAuthStateChange(async (event, newSession) => {
-        if (import.meta.dev) {
-          console.log('🔄 Auth state changed:', event)
-        }
-
         session.value = newSession
         user.value = newSession?.user || null
 
@@ -114,10 +98,6 @@ export const useAuth = () => {
         return { success: false, data: null, error: error.message }
       }
 
-      if (import.meta.dev) {
-        console.log('✅ Signed in successfully')
-      }
-
       return { success: true, data, error: null }
     } catch (error: any) {
       console.error('❌ Sign in error:', error)
@@ -141,10 +121,6 @@ export const useAuth = () => {
         return { success: false, data: null, error: error.message }
       }
 
-      if (import.meta.dev) {
-        console.log('✅ Signed up successfully')
-      }
-
       return { success: true, data, error: null }
     } catch (error: any) {
       console.error('❌ Sign up error:', error)
@@ -166,10 +142,6 @@ export const useAuth = () => {
 
       // Редиректим на login
       await router.push('/login')
-
-      if (import.meta.dev) {
-        console.log('✅ Signed out successfully')
-      }
 
       return { error: null }
     } catch (error) {
