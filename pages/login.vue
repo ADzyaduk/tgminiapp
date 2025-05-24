@@ -49,7 +49,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useToast } from '#imports'
 import { useAuth } from '~/composables/useAuth'
 
@@ -59,6 +59,7 @@ interface LoginForm {
 }
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
 const { signIn, isLoggedIn } = useAuth()
 
@@ -70,10 +71,16 @@ const isValid = computed(() => {
   return form.value.email.trim() !== '' && form.value.password.trim().length >= 6
 })
 
+// Получаем redirect URL из query параметров
+const redirectTo = computed(() => {
+  const redirect = route.query.redirect as string
+  return redirect && redirect !== '/login' ? redirect : '/'
+})
+
 // Перенаправляем если уже авторизован
 watch(isLoggedIn, (newValue) => {
   if (newValue) {
-    router.push('/')
+    router.push(redirectTo.value)
   }
 }, { immediate: true })
 

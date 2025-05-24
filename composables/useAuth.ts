@@ -255,10 +255,7 @@ export const useAuth = () => {
     }
   }
 
-  // Инициализация при первом вызове
-  if (initializing.value === true && process.client) {
-    initializeAuth()
-  }
+    // Инициализация происходит только через plugin
 
   return {
     // Состояние

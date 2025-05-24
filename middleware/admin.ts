@@ -1,8 +1,5 @@
 export default defineNuxtRouteMiddleware(async (to, from) => {
-  // Выполняем только на клиенте
-  if (process.server) return
-
-  const { user, initializing } = useAuth()
+  const { user, profile, isAdmin, initializing } = useAuth()
   
   // Ждем завершения инициализации
   while (initializing.value) {
@@ -12,5 +9,13 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
   // Если пользователь не авторизован, перенаправляем на логин
   if (!user.value) {
     return navigateTo(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+  }
+  
+  // Если пользователь не админ, перенаправляем на главную
+  if (!isAdmin.value) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Доступ запрещен. Требуются права администратора.'
+    })
   }
 }) 

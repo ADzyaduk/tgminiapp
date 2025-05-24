@@ -191,10 +191,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useToast, useSupabaseClient } from '#imports'
 import { useAuth } from '~/composables/useAuth'
 
-// Защита страницы - требуется авторизация
+// Защита страницы - требуется авторизация и права администратора
 definePageMeta({
   layout: 'default',
-  middleware: 'auth'
+  middleware: 'admin'
 })
 
 const supabase = useSupabaseClient()
