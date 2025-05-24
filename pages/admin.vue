@@ -18,7 +18,7 @@
       </div>
       
       <!-- Loader -->
-      <div v-if="isLoading" class="py-32 flex flex-col items-center justify-center">
+      <div v-if="isLoading || initializing" class="py-32 flex flex-col items-center justify-center">
         <UProgress animation="carousel" class="w-32" />
         <p class="mt-4 text-gray-500">Загрузка панели администратора...</p>
       </div>
@@ -199,13 +199,12 @@ definePageMeta({
 
 const supabase = useSupabaseClient()
 const toast = useToast()
-const { user: authUser, isAdmin: authIsAdmin, loading: authLoading } = useAuth()
+const { user: authUser, isAdmin, initializing } = useAuth()
 
 // State
 const isLoading = ref(true)
 const isLoadingUsers = ref(false)
 const isLoadingBoats = ref(false)
-const isAdmin = ref(false)
 const isAddingManager = ref(false)
 const isRoleUpdating = ref(false)
 const updatingUserId = ref<string | null>(null)
@@ -296,41 +295,6 @@ const availableUsers = computed(() => {
 })
 
 // Methods
-const checkAdminAccess = async () => {
-  try {
-    const { data: { user } }: { data: { user: any } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      // Если пользователь не авторизован, редиректим на логин
-      await navigateTo('/login')
-      return
-    }
-
-    const { data: profile, error: profileError }: { data: any, error: any } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError) {
-      throw profileError
-    }
-    
-    isAdmin.value = profile?.role === 'admin'
-  } catch (error: any) {
-    // Если ошибка связана с авторизацией, редиректим на логин
-    if (error.message === 'Не авторизован' || error.message?.includes('auth')) {
-      await navigateTo('/login')
-      return
-    }
-    
-    toast.add({
-      title: 'Ошибка',
-      description: 'Не удалось проверить права доступа',
-      color: 'error'
-    })
-  }
-}
 
 const loadUsers = async () => {
   isLoadingUsers.value = true
@@ -635,30 +599,15 @@ watch(selectedBoat, (newValue) => {
 
 // Initialize
 onMounted(async () => {
-  // Ждем завершения загрузки auth
+  // Ждем завершения инициализации auth
   let attempts = 0
-  while (authLoading.value && attempts < 20) {
+  while (initializing.value && attempts < 50) {
     await new Promise(resolve => setTimeout(resolve, 100))
     attempts++
   }
   
-  // Если после ожидания пользователь все еще не загружен, проверяем вручную
-  if (!authUser.value) {
-    await checkAdminAccess()
-    
-    // Если функция checkAdminAccess сделала редирект, выходим
-    if (!authUser.value && !isAdmin.value) {
-      isLoading.value = false
-      return
-    }
-  }
-  
-  // Используем значение из useAuth как приоритетное
-  if (authIsAdmin.value) {
-    isAdmin.value = true
-  }
-  
-  if (isAdmin.value || authIsAdmin.value) {
+  // Если пользователь авторизован и имеет права админа
+  if (authUser.value && isAdmin.value) {
     await Promise.all([loadUsers(), loadBoats()])
   }
   
