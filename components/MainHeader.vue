@@ -62,11 +62,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuth } from '~/composables/useAuth'
+import { useCleanup } from '~/composables/useCleanup'
 
 // Состояние
 const { user, profile, isAdmin, signOut } = useAuth()
+const { registerEventListener } = useCleanup()
 const showUserMenu = ref(false)
 
 function toggleUserMenu() {
@@ -74,19 +76,15 @@ function toggleUserMenu() {
 }
 
 // Закрывать меню при клике снаружи
-function closeUserMenu(e: MouseEvent) {
+function closeUserMenu(e: Event) {
   if (showUserMenu.value) {
     showUserMenu.value = false
   }
 }
 
-// Обработчик кликов вне меню
+// Правильная регистрация event listener с автоочисткой
 onMounted(() => {
-  document.addEventListener('click', closeUserMenu)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', closeUserMenu)
+  registerEventListener(document, 'click', closeUserMenu)
 })
 
 // Вычисляемые свойства
