@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     boat_id UUID REFERENCES boats(id) ON DELETE CASCADE,
     user_id UUID REFERENCES profiles(id),
     guest_name TEXT NOT NULL,
+    guest_phone TEXT,
     guest_note TEXT,
     start_time TIMESTAMP WITH TIME ZONE NOT NULL,
     end_time TIMESTAMP WITH TIME ZONE NOT NULL,
