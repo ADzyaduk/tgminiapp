@@ -3,115 +3,124 @@ export default defineNuxtPlugin(() => {
 
   const router = useRouter();
   const nuxtApp = useNuxtApp();
-  const { user, refreshUserSession, profile } = useAuth(); // Предполагаем, что у вас есть useAuth() composable
+  const { user, refreshUserSession } = useAuth(); 
 
-  const MAX_INACTIVITY_MS = 5 * 60 * 1000; // 5 минут простоя
-  const NAVIGATION_TIMEOUT_MS = 20000; // Увеличим таймаут навигации до 20 секунд
-  const FETCH_TIMEOUT_MS = 30000; // 30 секунд на HTTP запрос
+  const MAX_INACTIVITY_MS = 5 * 60 * 1000; // 5 минут простоя до агрессивных действий
+  const CHECK_INTERVAL_WHEN_ACTIVE_MS = 1 * 60 * 1000; // 1 минута для проверки, если вкладка активна
+  const NAVIGATION_TIMEOUT_MS = 20000; 
+  const FETCH_TIMEOUT_MS = 30000; 
   const MAX_NAVIGATION_FAILURES_BEFORE_RELOAD = 2;
 
   let lastActivityTime = Date.now();
+  let lastVisibleTime = document.visibilityState === 'visible' ? Date.now() : 0;
   let navigationTimeoutId: NodeJS.Timeout | null = null;
   let isCurrentlyNavigating = false;
   let navigationFailures = 0;
+  let appWasHidden = document.visibilityState !== 'visible';
 
-  const resetStoresState = () => {
-    console.log('🔄 Сброс состояния Pinia stores...');
+  const resetStoresState = (reason: string) => {
+    console.log(`🔄 Сброс состояния Pinia stores. Причина: ${reason}`);
     if (nuxtApp.$pinia) {
       for (const storeName in nuxtApp.$pinia.state.value) {
         const store = nuxtApp.$pinia.state.value[storeName];
         if (store && typeof store.$reset === 'function') {
           try {
             store.$reset();
-            console.log(`Store ${storeName} успешно сброшен.`);
+            console.log(`  Store ${storeName} успешно сброшен.`);
           } catch (e) {
-            console.warn(`Не удалось сбросить store ${storeName}:`, e);
+            console.warn(`  Не удалось сбросить store ${storeName}:`, e);
           }
         }
       }
     }
   };
 
-  const handleAppResume = async () => {
-    console.log('🚀 Приложение возобновляет работу после возможного простоя.');
+  const performAppResumeActions = async (resumeReason: string) => {
+    console.log(`🚀 Возобновление работы приложения. Причина: ${resumeReason}`);
     lastActivityTime = Date.now();
+    lastVisibleTime = Date.now(); // Обновляем, так как приложение только что стало активным/видимым
+    appWasHidden = false; // Сбрасываем флаг
 
-    // 1. Обновить сессию пользователя
-    if (user.value) { // Если пользователь был залогинен
+    if (user.value) {
       try {
-        console.log('Обновление сессии пользователя...');
-        await refreshUserSession(); // Ваша функция для обновления сессии
-        console.log('Сессия пользователя успешно обновлена.');
+        console.log('  Обновление сессии пользователя...');
+        await refreshUserSession(); 
+        console.log('  Сессия пользователя успешно обновлена.');
       } catch (error) {
-        console.warn('Не удалось обновить сессию пользователя:', error);
-        // Возможно, стоит перенаправить на логин или показать сообщение
+        console.warn('  Не удалось обновить сессию пользователя:', error);
       }
     }
 
-    // 2. Сбросить состояние сторов, чтобы данные перезагрузились
-    resetStoresState();
-
-    // 3. Перезагрузить текущую страницу, чтобы точно получить свежие данные
-    // Это более агрессивный, но часто эффективный метод
-    console.warn('Перезагрузка текущей страницы для получения свежих данных после простоя...');
-    router.go(0); // Перезагружает текущий маршрут
+    resetStoresState('возобновление работы после простоя/скрытия');
+    
+    console.warn('  Перезагрузка текущей страницы для обеспечения консистентности данных...');
+    router.go(0); 
   };
 
-  // Отслеживание активности пользователя
+  // Отслеживание активности пользователя (для lastActivityTime)
   const activityEvents: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
   activityEvents.forEach(event => {
     window.addEventListener(event, () => {
-      const now = Date.now();
-      if (now - lastActivityTime > MAX_INACTIVITY_MS / 2) { // Если прошло больше половины времени простоя
-         // Проверяем, не было ли перед этим длительного простоя
-        if (Date.now() - lastActivityTime > MAX_INACTIVITY_MS) {
-            handleAppResume();
-        }
-      }
-      lastActivityTime = now;
-    });
+      lastActivityTime = Date.now();
+    }, { passive: true });
   });
 
-  // Проверка при изменении видимости вкладки (возвращение на вкладку)
+  // Основной обработчик для visibilitychange
   document.addEventListener('visibilitychange', () => {
+    const now = Date.now();
     if (document.visibilityState === 'visible') {
-      if (Date.now() - lastActivityTime > MAX_INACTIVITY_MS) {
-        console.log('Возвращение на вкладку после длительного простоя.');
-        handleAppResume();
+      console.log('Вкладка стала видимой.');
+      const timeHidden = now - lastVisibleTime; // Время, которое вкладка была скрыта
+      // Если вкладка была скрыта или если прошло много времени с последней активности
+      // (даже если она была видима, но неактивна - например, другой скрин)
+      if (appWasHidden || (now - lastActivityTime > MAX_INACTIVITY_MS)) {
+        console.log(`  Вкладка была скрыта ${Math.round(timeHidden / 1000)}s или неактивна.`);
+        performAppResumeActions('возвращение на видимую/активную вкладку');
+      } else {
+        // Вкладка стала видимой, но простой был недолгим, просто обновляем время
+        lastVisibleTime = now;
+        lastActivityTime = now; // Считаем это активностью
       }
-      lastActivityTime = Date.now(); // Обновляем время активности при возвращении на вкладку
+    } else {
+      console.log('Вкладка стала скрытой.');
+      lastVisibleTime = now; // Запоминаем время, когда вкладка стала невидимой
+      appWasHidden = true;
     }
   });
 
-  // --- Мониторинг роутера и fetch (оставляем, но с фокусом на простое) ---
-  const forceAppReload = (reason: string) => {
-    console.warn(`🔄 Принудительная перезагрузка приложения. Причина: ${reason}`);
+  // Периодическая проверка, если вкладка остается активной (видимой)
+  // Помогает отловить случаи, когда visibilitychange не сработал или простой внутри видимой вкладки
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      const now = Date.now();
+      if (now - lastActivityTime > MAX_INACTIVITY_MS) {
+        console.log('Обнаружен длительный простой внутри активной вкладки.');
+        performAppResumeActions('длительный простой в активной вкладке');
+      }
+    }
+  }, CHECK_INTERVAL_WHEN_ACTIVE_MS);
+
+
+  // --- Мониторинг роутера и fetch --- 
+  const forceAppReloadOnError = (reason: string) => {
+    console.warn(`🔄 Принудительная перезагрузка приложения из-за ошибки. Причина: ${reason}`);
     window.location.reload();
   };
 
   router.beforeEach((to, from) => {
-    // Проверяем простой перед началом навигации
-    if (Date.now() - lastActivityTime > MAX_INACTIVITY_MS) {
-      console.log('Начало навигации после длительного простоя.');
-      // Вместо handleAppResume, чтобы не было двойной перезагрузки,
-      // просто сбрасываем сторы. Сессия должна была обновиться по visibilitychange/activity.
-      resetStoresState(); 
-    }
-    lastActivityTime = Date.now(); // Обновляем активность при навигации
-
+    lastActivityTime = Date.now(); // Любая навигация - это активность
     if (isCurrentlyNavigating) {
       if (navigationTimeoutId) clearTimeout(navigationTimeoutId);
     }
     isCurrentlyNavigating = true;
 
     navigationTimeoutId = setTimeout(() => {
-      console.error(`❌ Навигация на "${to.fullPath}" заняла слишком много времени (${NAVIGATION_TIMEOUT_MS}ms).`);
+      console.error(`❌ Навигация на "${to.fullPath}" таймаут (${NAVIGATION_TIMEOUT_MS}ms).`);
       isCurrentlyNavigating = false;
       navigationFailures++;
       if (navigationFailures >= MAX_NAVIGATION_FAILURES_BEFORE_RELOAD) {
-        forceAppReload(`слишком много неудачных навигаций (${navigationFailures})`);
+        forceAppReloadOnError(`слишком много неудачных навигаций (${navigationFailures})`);
       } else {
-        console.warn(`Попытка прямого перехода (window.location) на: ${to.fullPath}`);
         window.location.href = to.fullPath;
       }
     }, NAVIGATION_TIMEOUT_MS);
@@ -121,7 +130,7 @@ export default defineNuxtPlugin(() => {
     if (navigationTimeoutId) clearTimeout(navigationTimeoutId);
     isCurrentlyNavigating = false;
     navigationFailures = 0;
-    lastActivityTime = Date.now(); // Обновляем активность
+    lastActivityTime = Date.now(); 
   });
 
   router.onError((error) => {
@@ -130,7 +139,7 @@ export default defineNuxtPlugin(() => {
     isCurrentlyNavigating = false;
     navigationFailures++;
     if (navigationFailures >= MAX_NAVIGATION_FAILURES_BEFORE_RELOAD) {
-      forceAppReload(`ошибка роутера и ${navigationFailures} неудачных попыток`);
+      forceAppReloadOnError(`ошибка роутера (${navigationFailures} неудач)`);
     }
   });
 
@@ -138,34 +147,21 @@ export default defineNuxtPlugin(() => {
   const activeFetchControllers = new Set<AbortController>();
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    // Проверяем простой перед fetch
-    if (Date.now() - lastActivityTime > MAX_INACTIVITY_MS) {
-        console.log('Fetch запрос после длительного простоя. Сбрасываем состояние...');
-        // Не вызываем handleAppResume, чтобы не было рекурсивных перезагрузок, если fetch является частью handleAppResume
-        resetStoresState();
-        if(user.value) await refreshUserSession(); // Попытка обновить сессию перед важным запросом
-    }
-    lastActivityTime = Date.now(); // Обновляем активность при fetch
-
+    lastActivityTime = Date.now(); // Любой fetch - это активность
     const controller = new AbortController();
     activeFetchControllers.add(controller);
     const fetchTimeoutId = setTimeout(() => {
-      console.warn(`⚠️ Fetch запрос на "${String(input)}" отменен по таймауту (${FETCH_TIMEOUT_MS}ms).`);
+      console.warn(`⚠️ Fetch запрос "${String(input)}" таймаут (${FETCH_TIMEOUT_MS}ms).`);
       controller.abort();
     }, FETCH_TIMEOUT_MS);
 
     try {
-      const response = await originalFetch(input, {
-        ...init,
-        signal: controller.signal,
-      });
-      return response;
+      return await originalFetch(input, { ...init, signal: controller.signal });
     } catch (error) {
-      // ... (обработка ошибок fetch остается такой же)
       if (error.name === 'AbortError') {
-        console.log(`Fetch запрос на "${String(input)}" был отменен.`);
+        console.log(`Fetch "${String(input)}" был отменен.`);
       } else {
-        console.error(`Fetch ошибка для "${String(input)}":`, error);
+        console.error(`Fetch ошибка "${String(input)}":`, error);
       }
       throw error;
     } finally {
@@ -175,34 +171,17 @@ export default defineNuxtPlugin(() => {
   };
   
   router.beforeEach(() => {
-    if (activeFetchControllers.size > 7) { // Немного увеличил порог
-      console.warn(`Обнаружено ${activeFetchControllers.size} активных fetch запросов перед навигацией. Отменяем...`);
-      activeFetchControllers.forEach(controller => controller.abort());
-      activeFetchControllers.clear();
-    }
+    // Убрал отмену fetch запросов здесь, т.к. performAppResumeActions делает router.go(0)
+    // и это само по себе должно прервать ненужные запросы.
+    // Если оставить, может быть конфликт с запросами, инициированными performAppResumeActions.
   });
 
-  // Health check интервал оставляем для общего мониторинга, но основной фокус на простое
-  const healthCheckIntervalId = setInterval(() => {
-    const now = Date.now();
-    if (isCurrentlyNavigating && (now - lastActivityTime) > NAVIGATION_TIMEOUT_MS + 10000) { // +10 сек буфер
-        console.warn('Обнаружена потенциально зависшая навигация (health check).');
-        if (navigationTimeoutId) clearTimeout(navigationTimeoutId);
-         navigationFailures++;
-         isCurrentlyNavigating = false; 
-         if (navigationFailures >= MAX_NAVIGATION_FAILURES_BEFORE_RELOAD) {
-            forceAppReload(`зависшая навигация (health check, ${navigationFailures})`);
-         } else {
-            router.push('/'); 
-         }
-    }
-  }, NAVIGATION_TIMEOUT_MS * 2); // Проверяем реже, но достаточно часто
-
+  // Очистка при закрытии вкладки
   window.addEventListener('beforeunload', () => {
     if (navigationTimeoutId) clearTimeout(navigationTimeoutId);
-    clearInterval(healthCheckIntervalId);
+    // clearInterval для healthCheckIntervalId не нужен, т.к. он был удален
     activeFetchControllers.forEach(controller => controller.abort());
   });
 
-  console.log('🛡️ Плагин стабильности приложения (v2 - фокус на простое) запущен.');
+  console.log('🛡️ Плагин стабильности приложения (v3 - фокус на пробуждении и простое) запущен.');
 }); 
