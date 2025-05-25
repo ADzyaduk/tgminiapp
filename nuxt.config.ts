@@ -41,7 +41,8 @@ export default defineNuxtConfig({
     public: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_KEY,
-      telegramBotToken: process.env.TELEGRAM_BOT_TOKEN
+      telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+      disableRealtime: process.env.DISABLE_REALTIME || 'false'
     },
   },
   

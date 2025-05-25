@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { useSupabaseClient } from '#imports'
+import { useSupabaseSafe } from '~/composables/useSupabaseSafe'
 
 // Create a state that will be shared across components
 const groupTrips = ref([])
@@ -12,7 +12,7 @@ const loadedBoatIds = ref(new Set())
 
 // Export the composable
 export const useGroupTrips = () => {
-  const supabaseClient = useSupabaseClient()
+  const supabaseClient = useSupabaseSafe()
   
   /**
    * Load group trips for a specific boat
@@ -221,6 +221,20 @@ export const useGroupTrips = () => {
    * Listen for real-time updates to group trips
    */
   const subscribeToTrips = () => {
+    // Проверяем, отключен ли realtime
+    if (supabaseClient.isRealtimeDisabled) {
+      console.log('Realtime отключен, используем polling для обновления групповых поездок')
+      // Используем polling вместо realtime
+      const pollInterval = setInterval(() => {
+        loadAllAvailableTrips()
+      }, 30000) // Обновляем каждые 30 секунд
+      
+      // Return function to unsubscribe
+      return () => {
+        clearInterval(pollInterval)
+      }
+    }
+    
     const channel = supabaseClient
       .channel('group_trips_updates')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'group_trips' }, (payload) => {

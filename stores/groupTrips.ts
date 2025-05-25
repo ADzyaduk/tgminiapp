@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { useSupabaseClient } from '#imports'
+import { useSupabaseClient, useSupabaseSafe } from '#imports'
 import { useBoatImages } from '~/composables/useBoatImages'
 
 export const useGroupTripsStore = defineStore('groupTrips', {
@@ -223,11 +223,25 @@ export const useGroupTripsStore = defineStore('groupTrips', {
      * Подписка на обновления групповых поездок в реальном времени
      */
     subscribeToTrips() {
-      const supabaseClient = useSupabaseClient()
+      const supabaseClient = useSupabaseSafe()
       
       if (this.unsubscribe) {
         // Если уже подписаны, сначала очищаем
         this.unsubscribe()
+      }
+      
+      // Проверяем, отключен ли realtime
+      if (supabaseClient.isRealtimeDisabled) {
+        console.log('Realtime отключен, используем polling для обновления групповых поездок')
+        // Используем polling вместо realtime
+        const pollInterval = setInterval(() => {
+          this.loadAllBookableTrips()
+        }, 30000) // Обновляем каждые 30 секунд
+        
+        this.unsubscribe = () => {
+          clearInterval(pollInterval)
+        }
+        return
       }
       
       const subscription = supabaseClient
