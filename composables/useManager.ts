@@ -19,9 +19,12 @@ export function useManager(userId: Ref<string | null>, boatId: Ref<string | null
         .eq('boat_id', boatId.value)
         .eq('user_id', userId.value)
         .maybeSingle()
+      
       if (error) throw error
+      
       isManager.value = !!data
-    } catch {
+    } catch (error) {
+      console.error('useManager: Exception', error)
       isManager.value = false
     }
   }

@@ -126,19 +126,18 @@ async function checkManagerAccess(supabase: any, userId: string, boatId: string)
   // Если админ - всегда разрешаем
   if (profile?.role === 'admin') return true
     
-  // Проверяем, менеджер ли этой лодки
-  if (profile?.role === 'manager') {
-    const { data: boatManager, error } = await supabase
-      .from('boat_managers')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('boat_id', boatId)
-      .single()
-      
-    return !!boatManager
-  }
+  // Если пользователь с ролью manager - разрешаем все
+  if (profile?.role === 'manager') return true
   
-  return false
+  // Для всех остальных ролей проверяем, назначен ли пользователь менеджером этой лодки
+  const { data: boatManager, error } = await supabase
+    .from('boat_managers')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('boat_id', boatId)
+    .single()
+    
+  return !!boatManager
 }
 
 // Отправка уведомления клиенту, если у него настроен Telegram

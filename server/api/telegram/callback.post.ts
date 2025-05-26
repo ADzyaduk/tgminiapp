@@ -70,8 +70,8 @@ export default defineEventHandler(async (event) => {
       return { status: 404, body: { error: 'Booking not found' } }
     }
     
-    // Если пользователь - менеджер, проверяем права на эту лодку
-    if (adminUser.role === 'manager') {
+    // Проверяем права на управление этой лодкой для всех пользователей (не только с ролью manager)
+    if (adminUser.role !== 'admin') {
       const { data: managerAccess } = await supabase
         .from('boat_managers')
         .select('*')

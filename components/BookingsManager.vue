@@ -152,7 +152,7 @@ const { isManager } = useManager(
   computed(() => props.boatId ?? null)
 )
 
-// Проверка доступа - администратор или менеджер лодки
+// Проверка доступа - администратор или менеджер конкретной лодки
 const hasAccess = computed(() => {
   if (!user.value) return false
   return isAdmin.value || isManager.value
