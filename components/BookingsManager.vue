@@ -1,92 +1,101 @@
 <template>
   <section class="mb-8 space-y-6">
-    <header class="flex items-center justify-between mb-6">
-      <h2 class="text-xl font-semibold">Управление бронированиями</h2>
-    </header>
-
-    <!-- Фильтры и календарь -->
-    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-lg shadow-sm bg-muted">
-      <ClientOnly>
-        <div class="flex flex-col items-center">
-          <!-- Календарь теперь показывается только в BookingCalendar -->
-          <p class="text-lg font-semibold">Выбранная дата:</p>
-          <p class="text-2xl font-bold mt-2">{{ formattedDate }}</p>
-        </div>
-      </ClientOnly>
-
-      <div class="flex flex-wrap gap-2">
-        <UButton
-          v-for="f in FILTER_KEYS"
-          :key="f"
-          :variant="activeFilter === f ? 'solid' : 'outline'"
-          size="sm"
-          :color="activeFilter === f ? 'primary' : 'neutral'"
-          @click="activeFilter = f"
-        >
-          {{ FILTERS[f] }}
-        </UButton>
-
-        <UButton
-          variant="ghost"
-          icon="i-heroicons-arrow-path"
-          aria-label="Обновить"
-          @click="loadBookings"
-          :loading="loading"
-          color="primary"
-        />
-      </div>
+    <!-- Access check -->
+    <div v-if="!hasAccess" class="text-center py-12 rounded-lg shadow-sm bg-muted">
+      <UIcon name="i-heroicons-lock-closed" class="w-12 h-12 mx-auto mb-4 text-red-500" />
+      <p class="text-lg">Доступ запрещен</p>
+      <p class="text-sm text-gray-500">У вас нет прав для управления бронированиями этой лодки</p>
     </div>
+    
+    <div v-else>
+      <header class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold">Управление бронированиями</h2>
+      </header>
 
-    <!-- Лоадер или список -->
-    <div>
-      <div v-if="loading" class="text-center py-8">
-        <UProgress animation="carousel" color="primary" />
-        <p class="mt-2">Загрузка...</p>
+      <!-- Фильтры и календарь -->
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-lg shadow-sm bg-muted">
+        <ClientOnly>
+          <div class="flex flex-col items-center">
+            <!-- Календарь теперь показывается только в BookingCalendar -->
+            <p class="text-lg font-semibold">Выбранная дата:</p>
+            <p class="text-2xl font-bold mt-2">{{ formattedDate }}</p>
+          </div>
+        </ClientOnly>
+
+        <div class="flex flex-wrap gap-2">
+          <UButton
+            v-for="f in FILTER_KEYS"
+            :key="f"
+            :variant="activeFilter === f ? 'solid' : 'outline'"
+            size="sm"
+            :color="activeFilter === f ? 'primary' : 'neutral'"
+            @click="activeFilter = f"
+          >
+            {{ FILTERS[f] }}
+          </UButton>
+
+          <UButton
+            variant="ghost"
+            icon="i-heroicons-arrow-path"
+            aria-label="Обновить"
+            @click="loadBookings"
+            :loading="loading"
+            color="primary"
+          />
+        </div>
       </div>
 
-      <div v-else>
-        <div v-if="groups.length">
-          <div
-            v-for="g in groups"
-            :key="g.status"
-            class="mb-8 p-4 rounded-lg shadow-sm bg-muted"
-          >
-            <h3 class="text-lg font-semibold flex items-center gap-2 mb-4">
-              <span
-                class="w-3 h-3 rounded-full"
-                :class="statusConfig[g.status].class"
-              ></span>
-              {{ statusConfig[g.status].title }}
-              <UBadge variant="soft" color="neutral">{{ g.bookings.length }}</UBadge>
-            </h3>
+      <!-- Лоадер или список -->
+      <div>
+        <div v-if="loading" class="text-center py-8">
+          <UProgress animation="carousel" color="primary" />
+          <p class="mt-2">Загрузка...</p>
+        </div>
 
-            <TransitionGroup name="list" tag="div">
-              <BookingCard
-                v-for="b in g.bookings"
-                :key="b.id"
-                :booking="b"
-                @update-status="updateStatus"
-                class="mb-4"
-              />
-            </TransitionGroup>
+        <div v-else>
+          <div v-if="groups.length">
+            <div
+              v-for="g in groups"
+              :key="g.status"
+              class="mb-8 p-4 rounded-lg shadow-sm bg-muted"
+            >
+              <h3 class="text-lg font-semibold flex items-center gap-2 mb-4">
+                <span
+                  class="w-3 h-3 rounded-full"
+                  :class="statusConfig[g.status].class"
+                ></span>
+                {{ statusConfig[g.status].title }}
+                <UBadge variant="soft" color="neutral">{{ g.bookings.length }}</UBadge>
+              </h3>
+
+              <TransitionGroup name="list" tag="div">
+                <BookingCard
+                  v-for="b in g.bookings"
+                  :key="b.id"
+                  :booking="b"
+                  @update-status="updateStatus"
+                  class="mb-4"
+                />
+              </TransitionGroup>
+            </div>
+          </div>
+          <div v-else class="text-center py-12 rounded-lg shadow-sm bg-muted">
+            <UIcon name="i-heroicons-calendar" class="w-12 h-12 mx-auto mb-4" />
+            <p class="text-lg">Бронирований на {{ formattedDate }} нет</p>
           </div>
         </div>
-        <div v-else class="text-center py-12 rounded-lg shadow-sm bg-muted">
-          <UIcon name="i-heroicons-calendar" class="w-12 h-12 mx-auto mb-4" />
-          <p class="text-lg">Бронирований на {{ formattedDate }} нет</p>
-        </div>
       </div>
-    </div>
 
-    <!-- Back button -->
-    <div class="mb-4">
-      <UButton 
-        icon="i-heroicons-arrow-left" 
-        variant="soft" 
-        @click="goBack"
-        class="mb-2">
-        Вернуться к списку
-      </UButton>
+      <!-- Back button -->
+      <div class="mb-4">
+        <UButton 
+          icon="i-heroicons-arrow-left" 
+          variant="soft" 
+          @click="goBack"
+          class="mb-2">
+          Вернуться к списку
+        </UButton>
+      </div>
     </div>
   </section>
 </template>
@@ -97,6 +106,8 @@ import { CalendarDate } from '@internationalized/date'
 import type { Database } from '~/types/supabase'
 import { useSupabaseClient } from '#imports'
 import { useDateStore } from '~/stores/useDateStore'
+import { useAuth } from '~/composables/useAuth'
+import { useManager } from '~/composables/useManager'
 
 type BookingRow = Database['public']['Tables']['bookings']['Row']
 type Booking = BookingRow & { profile: { name: string; phone: string } }
@@ -133,6 +144,19 @@ const toast = {
   error: (message: string) => useNuxtApp().$toast?.error?.(message),
   success: (message: string) => useNuxtApp().$toast?.success?.(message)
 }
+
+// Access check
+const { user, isAdmin } = useAuth()
+const { isManager } = useManager(
+  computed(() => user.value?.id ?? null),
+  computed(() => props.boatId ?? null)
+)
+
+// Проверка доступа - администратор или менеджер лодки
+const hasAccess = computed(() => {
+  if (!user.value) return false
+  return isAdmin.value || isManager.value
+})
 
 // Используем Pinia store для даты
 const dateStore = useDateStore()

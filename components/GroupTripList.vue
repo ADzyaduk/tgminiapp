@@ -244,6 +244,9 @@ const boatReviews = ref({})
 const editingSeats = ref({})
 const expandedBookingForms = ref({})
 
+// Менеджеры лодок - кэшируем проверки
+const boatManagersCache = ref<Record<string, boolean>>({})
+
 // Computed свойства
 const bookableTrips = computed(() => {
   const trips = groupTripsStore.bookableTrips
@@ -260,6 +263,9 @@ const loadBookableTrips = async () => {
     } else {
       await groupTripsStore.loadAllBookableTrips()
     }
+    
+    // Загружаем права менеджера после загрузки поездок
+    await loadManagerRights()
   } catch (error) {
     console.error('Error loading available trips:', error)
     toast.add({
@@ -412,12 +418,37 @@ const hasUnsavedChanges = (trip) => {
 const isBoatManager = (boatId: string) => {
   if (!user.value) return false
   if (isAdmin.value) return true // Администратор может управлять всем
-  // Используем composable useManager
-  const { isManager: checkIsManager } = useManager(
-    computed(() => user.value?.id ?? null),
-    computed(() => boatId ?? null) 
-  );
-  return checkIsManager.value
+  
+  // Проверяем кэш
+  return boatManagersCache.value[boatId] || false
+}
+
+// Загрузка прав менеджера для лодки
+const checkManagerRights = async (boatId: string) => {
+  if (!user.value || isAdmin.value) return
+  
+  try {
+    const { data, error } = await supabaseClient
+      .from('boat_managers')
+      .select('user_id')
+      .eq('boat_id', boatId)
+      .eq('user_id', user.value.id)
+      .maybeSingle()
+    
+    if (error) throw error
+    boatManagersCache.value[boatId] = !!data
+  } catch (error) {
+    console.error('Error checking manager rights:', error)
+    boatManagersCache.value[boatId] = false
+  }
+}
+
+// Загрузка прав менеджера для всех лодок в списке
+const loadManagerRights = async () => {
+  if (!user.value || isAdmin.value) return
+  
+  const uniqueBoatIds = [...new Set(bookableTrips.value.map(trip => trip.boat_id))]
+  await Promise.all(uniqueBoatIds.map(boatId => checkManagerRights(boatId)))
 }
 
 // Функции управления поездкой (start, cancel)
@@ -441,6 +472,18 @@ const cancelTrip = async (trip) => {
     await loadBookableTrips()
   } catch (err) {
     toast.add({ title: 'Ошибка', description: 'Не удалось отменить поездку', color: 'error' })
+  }
+}
+
+const completeTrip = async (trip) => {
+  if (!confirm('Вы уверены, что хотите завершить эту поездку?')) return
+  try {
+    const { error } = await groupTripsStore.completeTrip(trip.id)
+    if (error) throw error
+    toast.add({ title: 'Успешно', description: 'Поездка завершена', color: 'success' })
+    await loadBookableTrips()
+  } catch (err) {
+    toast.add({ title: 'Ошибка', description: 'Не удалось завершить поездку', color: 'error' })
   }
 }
 </script>

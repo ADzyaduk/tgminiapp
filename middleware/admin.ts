@@ -1,5 +1,5 @@
 export default defineNuxtRouteMiddleware(async (to, from) => {
-  const { user, profile, isAdmin, initializing } = useAuth()
+  const { user, profile, isAdmin, isManager, initializing } = useAuth()
   
   // Ждем завершения инициализации с таймаутом
   let waitTime = 0

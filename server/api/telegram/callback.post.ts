@@ -75,7 +75,7 @@ export default defineEventHandler(async (event) => {
       const { data: managerAccess } = await supabase
         .from('boat_managers')
         .select('*')
-        .eq('profile_id', adminUser.id)
+        .eq('user_id', adminUser.id)
         .eq('boat_id', booking.boat_id)
         .single()
         

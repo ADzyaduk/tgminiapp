@@ -20,6 +20,10 @@ export const useAuth = () => {
     return profile.value?.role === 'admin' || 
            user.value?.user_metadata?.role === 'admin'
   })
+  const isManager = computed(() => {
+    return profile.value?.role === 'manager' || 
+           user.value?.user_metadata?.role === 'manager'
+  })
   const userEmail = computed(() => user.value?.email || '')
   const userId = computed(() => user.value?.id || '')
 
@@ -160,6 +164,7 @@ export const useAuth = () => {
     // Вычисляемые свойства
     isLoggedIn,
     isAdmin,
+    isManager,
     userEmail,
     userId,
     

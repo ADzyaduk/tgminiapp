@@ -131,7 +131,7 @@ async function checkManagerAccess(supabase: any, userId: string, boatId: string)
     const { data: boatManager, error } = await supabase
       .from('boat_managers')
       .select('*')
-      .eq('profile_id', userId)
+      .eq('user_id', userId)
       .eq('boat_id', boatId)
       .single()
       
