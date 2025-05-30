@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     const { data: boats, error } = await supabase
       .from('boats')
       .select('*')
-      .eq('active', true)
+      // .eq('active', true) // Убираем фильтр пока не знаем структуру таблицы
 
     if (error) {
       console.error('Database error:', error)
