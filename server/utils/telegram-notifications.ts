@@ -15,9 +15,9 @@ export function formatBookingNotification(booking: any): string {
     hour: '2-digit',
     minute: '2-digit'
   })
-  
+
   return `🆕 <b>Новое бронирование</b>
-  
+
 ID: ${booking.id}
 Статус: <b>ожидает подтверждения</b>
 Клиент: ${booking.profile?.name || 'Не указано'} (${booking.profile?.email || 'Нет email'})
@@ -38,22 +38,22 @@ export function formatStatusNotification(booking: any, status: string): string {
     confirmed: '✅',
     cancelled: '❌'
   }[status] || '🔔'
-  
+
   const statusText = {
     pending: 'ожидает подтверждения',
     confirmed: 'подтверждено',
     cancelled: 'отменено'
   }[status] || 'изменило статус'
-  
+
   const formattedDate = new Date(booking.start_time).toLocaleDateString('ru-RU', {
     day: 'numeric',
     month: 'long',
     hour: '2-digit',
     minute: '2-digit'
   })
-  
+
   return `${statusEmoji} <b>Бронирование ${statusText}</b>
-  
+
 ID: ${booking.id}
 Статус: <b>${statusText}</b>
 Клиент: ${booking.profile?.name || 'Не указано'} (${booking.profile?.email || 'Нет email'})
@@ -73,56 +73,124 @@ export async function sendAdminNotification(
   options: {
     parseMode?: 'HTML' | 'Markdown',
     boatId?: string,
-    bookingId?: string
+    bookingId?: string,
+    event?: H3Event
   } = {}
 ): Promise<boolean> {
-  const { parseMode = 'HTML', boatId, bookingId } = options
-  
+  const { parseMode = 'HTML', boatId, bookingId, event } = options
+
   try {
-    const runtimeConfig = useRuntimeConfig()
-    const token = runtimeConfig.public.telegramBotToken
-    
+    const token = process.env.TELEGRAM_BOT_TOKEN
+
     if (!token) {
       console.error('Telegram token not configured')
       return false
     }
-    
+
     const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-    
-    // В реальном приложении тут должна быть логика получения
-    // ID чата администраторов или менеджеров из базы данных
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
-    
-    if (!adminChatId) {
-      console.error('Admin chat ID not configured')
-      return false
+
+    // Сначала пытаемся отправить менеджерам лодки, если указан boatId
+    let sentToManagers = false
+    if (boatId && event) {
+      try {
+        const supabase = await serverSupabaseClient(event)
+
+        // Получаем менеджеров этой лодки
+        const { data: managers } = await supabase
+          .from('boat_managers')
+          .select('user_id')
+          .eq('boat_id', boatId)
+
+        if (managers && managers.length > 0) {
+          // Получаем Telegram ID менеджеров
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('telegram_id')
+            .in('id', managers.map((m: any) => m.user_id))
+            .not('telegram_id', 'is', null)
+
+          if (profiles && profiles.length > 0) {
+            // Кнопки управления бронированием для инлайн-клавиатуры
+            const inlineKeyboard = bookingId ? {
+              inline_keyboard: [
+                [
+                  { text: "✅ Подтвердить", callback_data: `booking:confirm:${bookingId}` },
+                  { text: "❌ Отменить", callback_data: `booking:cancel:${bookingId}` }
+                ],
+                [
+                  { text: "🔍 Детали", callback_data: `booking:details:${bookingId}` }
+                ]
+              ]
+            } : undefined
+
+            // Отправляем уведомление каждому менеджеру
+            const results = await Promise.all(
+              profiles.map(async (profile: any) => {
+                try {
+                  const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      chat_id: profile.telegram_id,
+                      text: message,
+                      parse_mode: parseMode,
+                      reply_markup: inlineKeyboard
+                    })
+                  })
+
+                  return response.ok
+                } catch (error) {
+                  console.error(`Failed to send notification to manager ${profile.telegram_id}:`, error)
+                  return false
+                }
+              })
+            )
+
+            sentToManagers = results.some(Boolean)
+            console.log(`Sent notifications to ${results.filter(Boolean).length} boat managers`)
+          }
+        }
+      } catch (error) {
+        console.error('Error sending notifications to boat managers:', error)
+      }
     }
-    
-    // Кнопки управления бронированием для инлайн-клавиатуры
-    const inlineKeyboard = bookingId ? {
-      inline_keyboard: [
-        [
-          { text: "✅ Подтвердить", callback_data: `booking:confirm:${bookingId}` },
-          { text: "❌ Отменить", callback_data: `booking:cancel:${bookingId}` }
-        ],
-        [
-          { text: "🔍 Детали", callback_data: `booking:details:${bookingId}` }
+
+    // Если не удалось отправить менеджерам или нет менеджеров, отправляем админу
+    if (!sentToManagers) {
+      const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || "1396986028"  // Ваш Telegram ID
+
+      console.log(`Sending notification to admin chat ID: ${adminChatId}`)
+
+      // Кнопки управления бронированием для инлайн-клавиатуры
+      const inlineKeyboard = bookingId ? {
+        inline_keyboard: [
+          [
+            { text: "✅ Подтвердить", callback_data: `booking:confirm:${bookingId}` },
+            { text: "❌ Отменить", callback_data: `booking:cancel:${bookingId}` }
+          ],
+          [
+            { text: "🔍 Детали", callback_data: `booking:details:${bookingId}` }
+          ]
         ]
-      ]
-    } : undefined
-    
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: adminChatId,
-        text: message,
-        parse_mode: parseMode,
-        reply_markup: inlineKeyboard
+      } : undefined
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: adminChatId,
+          text: message,
+          parse_mode: parseMode,
+          reply_markup: inlineKeyboard
+        })
       })
-    })
-    
-    return response.ok
+
+      const result = response.ok
+      console.log(`Admin notification result: ${result}`)
+      return result
+    }
+
+    return sentToManagers
   } catch (error) {
     console.error('Failed to send admin notification:', error)
     return false
@@ -139,40 +207,39 @@ export async function sendBoatManagersNotification(
   parseMode: 'HTML' | 'Markdown' = 'HTML'
 ): Promise<boolean> {
   try {
-    const supabase = serverSupabaseClient(event)
-    
+    const supabase = await serverSupabaseClient(event)
+
     // Получаем ID менеджеров этой лодки
     const { data: managers } = await supabase
       .from('boat_managers')
       .select('user_id')
       .eq('boat_id', boatId)
-    
+
     if (!managers || managers.length === 0) {
       return false
     }
-    
+
     // Получаем Telegram ID менеджеров
     const { data: profiles } = await supabase
       .from('profiles')
       .select('telegram_id')
       .in('id', managers.map((m: any) => m.user_id))
       .not('telegram_id', 'is', null)
-    
+
     if (!profiles || profiles.length === 0) {
       return false
     }
-    
+
     // Отправляем сообщение каждому менеджеру
-    const runtimeConfig = useRuntimeConfig()
-    const token = runtimeConfig.public.telegramBotToken
-    
+    const token = process.env.TELEGRAM_BOT_TOKEN
+
     if (!token) {
       console.error('Telegram token not configured')
       return false
     }
-    
+
     const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-    
+
     const results = await Promise.all(
       profiles.map(async (profile: any) => {
         try {
@@ -185,7 +252,7 @@ export async function sendBoatManagersNotification(
               parse_mode: parseMode
             })
           })
-          
+
           return response.ok
         } catch (error) {
           console.error(`Failed to send notification to manager ${profile.telegram_id}:`, error)
@@ -193,10 +260,10 @@ export async function sendBoatManagersNotification(
         }
       })
     )
-    
+
     return results.some(Boolean)
   } catch (error) {
     console.error('Failed to send boat managers notification:', error)
     return false
   }
-} 
+}

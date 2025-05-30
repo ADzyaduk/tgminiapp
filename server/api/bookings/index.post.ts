@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // Подключаемся к Supabase
-    const supabase = serverSupabaseClient(event)
+    const supabase = await serverSupabaseClient(event)
 
     // Создаем запись о бронировании
     const { data: booking, error } = await supabase
@@ -31,9 +31,9 @@ export default defineEventHandler(async (event) => {
 
     if (error) {
       console.error('Error creating booking:', error)
-      return { 
-        status: 500, 
-        body: { error: 'Failed to create booking' } 
+      return {
+        status: 500,
+        body: { error: 'Failed to create booking' }
       }
     }
 
@@ -46,8 +46,9 @@ export default defineEventHandler(async (event) => {
         // Отправляем уведомление с кнопками для подтверждения/отмены
         await sendAdminNotification(notificationMessage, {
           parseMode: 'HTML',
-          boatId: booking.boat_id,
-          bookingId: booking.id
+          boatId: booking.boat_id as string,
+          bookingId: booking.id as string,
+          event
         })
       } catch (notifyError) {
         // Логируем ошибку, но не влияем на основной ответ API
@@ -55,15 +56,15 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    return { 
-      status: 201, 
-      body: booking 
+    return {
+      status: 201,
+      body: booking
     }
   } catch (error) {
     console.error('Error in booking creation:', error)
-    return { 
-      status: 500, 
-      body: { error: 'Internal server error' } 
+    return {
+      status: 500,
+      body: { error: 'Internal server error' }
     }
   }
-}) 
+})

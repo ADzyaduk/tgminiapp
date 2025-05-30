@@ -59,6 +59,9 @@ export default defineEventHandler(async (event) => {
 
 // Обработка команды /start
 async function handleStartCommand(chatId: number, from: any, supabase: any) {
+  // Сохраняем/обновляем Telegram ID пользователя
+  await saveTelegramUser(from, supabase)
+
   let message = `👋 Добро пожаловать в систему бронирования лодок!
 
 🚀 Нажмите кнопку ниже, чтобы открыть приложение и забронировать лодку.
@@ -68,7 +71,9 @@ async function handleStartCommand(chatId: number, from: any, supabase: any) {
 • Оформить бронирование
 • Отслеживать статус заявки
 
-🔔 Я буду присылать вам уведомления о статусе бронирования прямо в Telegram!`
+🔔 Я буду присылать вам уведомления о статусе бронирования прямо в Telegram!
+
+🆔 Ваш Telegram ID: <code>${from.id}</code> (сохранен в системе)`
 
   return await sendWebAppButton(chatId, message, '🚀 Открыть приложение')
 }
@@ -297,5 +302,82 @@ async function sendMessage(chatId: number, text: string) {
   } catch (error) {
     console.error('Error sending message to Telegram:', error)
     return { status: 500, body: { error: 'Failed to send message' } }
+  }
+}
+
+// Функция для сохранения Telegram пользователя
+async function saveTelegramUser(from: any, supabase: any) {
+  try {
+    // Проверяем есть ли уже пользователь с таким telegram_id
+    const { data: existingUser } = await supabase
+      .from('profiles')
+      .select('id, name, email')
+      .eq('telegram_id', from.id.toString())
+      .single()
+
+    if (existingUser) {
+      console.log(`Existing user found: ${existingUser.name || existingUser.email}`)
+      return existingUser
+    }
+
+    // Если пользователя нет, создаем новую запись или обновляем существующую по username/email
+    let userToUpdate = null
+
+    // Сначала попробуем найти по username (если есть)
+    if (from.username) {
+      const { data: userByUsername } = await supabase
+        .from('profiles')
+        .select('id, name, email, telegram_id')
+        .ilike('email', `%${from.username}%`)
+        .is('telegram_id', null)
+        .single()
+
+      if (userByUsername) {
+        userToUpdate = userByUsername
+      }
+    }
+
+    if (userToUpdate) {
+      // Обновляем существующего пользователя
+      const { data: updatedUser, error } = await supabase
+        .from('profiles')
+        .update({
+          telegram_id: from.id.toString(),
+          name: userToUpdate.name || `${from.first_name || ''} ${from.last_name || ''}`.trim() || from.username || 'Telegram User'
+        })
+        .eq('id', userToUpdate.id)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Error updating user:', error)
+      } else {
+        console.log(`Updated user ${updatedUser.email} with Telegram ID ${from.id}`)
+      }
+
+      return updatedUser
+    } else {
+      // Создаем нового пользователя
+      const { data: newUser, error } = await supabase
+        .from('profiles')
+        .insert({
+          telegram_id: from.id.toString(),
+          name: `${from.first_name || ''} ${from.last_name || ''}`.trim() || from.username || 'Telegram User',
+          email: from.username ? `${from.username}@telegram.tmp` : `user_${from.id}@telegram.tmp`
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Error creating user:', error)
+      } else {
+        console.log(`Created new user with Telegram ID ${from.id}`)
+      }
+
+      return newUser
+    }
+  } catch (error) {
+    console.error('Error in saveTelegramUser:', error)
+    return null
   }
 }
