@@ -23,6 +23,21 @@ export default defineEventHandler(async (event) => {
   // Получаем клиент Supabase
   const supabase = await serverSupabaseClient(event)
 
+  // Автоматическое приветствие для новых пользователей (без команды)
+  if (text && !text.startsWith('/')) {
+    // Проверяем, первый ли раз пользователь пишет боту
+    const { data: existingUser } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('telegram_id', from.id.toString())
+      .single()
+
+    if (!existingUser) {
+      // Новый пользователь - показываем приветствие
+      return await handleStartCommand(chat.id, from, supabase)
+    }
+  }
+
   // Обработка команд
   if (text && text.startsWith('/')) {
     const command = text.split(' ')[0].toLowerCase()
