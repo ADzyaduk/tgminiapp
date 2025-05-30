@@ -60,9 +60,13 @@ export default defineEventHandler(async (event) => {
 // Обработка команды /start
 async function handleStartCommand(chatId: number, from: any, supabase: any) {
   // Сохраняем/обновляем Telegram ID пользователя
-  await saveTelegramUser(from, supabase)
+  const userResult = await saveTelegramUser(from, supabase)
 
-  let message = `👋 Добро пожаловать в систему бронирования лодок!
+  let message = ''
+
+  if (userResult && userResult.id) {
+    // Существующий пользователь найден
+    message = `👋 Добро пожаловать в систему бронирования лодок!
 
 🚀 Нажмите кнопку ниже, чтобы открыть приложение и забронировать лодку.
 
@@ -73,7 +77,22 @@ async function handleStartCommand(chatId: number, from: any, supabase: any) {
 
 🔔 Я буду присылать вам уведомления о статусе бронирования прямо в Telegram!
 
-🆔 Ваш Telegram ID: <code>${from.id}</code> (сохранен в системе)`
+🆔 Ваш Telegram ID: <code>${from.id}</code> (связан с аккаунтом)`
+  } else {
+    // Новый пользователь - нужно связать аккаунт
+    message = `👋 Добро пожаловать в систему бронирования лодок!
+
+🆔 Ваш Telegram ID: <code>${from.id}</code>
+
+⚠️ <b>Аккаунт не найден</b>
+
+📝 Для получения уведомлений нужно:
+1️⃣ Зарегистрироваться в приложении
+2️⃣ Указать этот Telegram ID в профиле
+3️⃣ Или обратиться к администратору
+
+🚀 Нажмите кнопку чтобы открыть приложение:`
+  }
 
   return await sendWebAppButton(chatId, message, '🚀 Открыть приложение')
 }
@@ -320,61 +339,14 @@ async function saveTelegramUser(from: any, supabase: any) {
       return existingUser
     }
 
-    // Если пользователя нет, создаем новую запись или обновляем существующую по username/email
-    let userToUpdate = null
+    // ВАЖНО: НЕ создаем новых пользователей автоматически!
+    // Только показываем инструкцию как связать аккаунт
+    console.log(`New Telegram user ${from.id}, but not creating profile automatically`)
 
-    // Сначала попробуем найти по username (если есть)
-    if (from.username) {
-      const { data: userByUsername } = await supabase
-        .from('profiles')
-        .select('id, name, email, telegram_id')
-        .ilike('email', `%${from.username}%`)
-        .is('telegram_id', null)
-        .single()
-
-      if (userByUsername) {
-        userToUpdate = userByUsername
-      }
-    }
-
-    if (userToUpdate) {
-      // Обновляем существующего пользователя
-      const { data: updatedUser, error } = await supabase
-        .from('profiles')
-        .update({
-          telegram_id: from.id.toString(),
-          name: userToUpdate.name || `${from.first_name || ''} ${from.last_name || ''}`.trim() || from.username || 'Telegram User'
-        })
-        .eq('id', userToUpdate.id)
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Error updating user:', error)
-      } else {
-        console.log(`Updated user ${updatedUser.email} with Telegram ID ${from.id}`)
-      }
-
-      return updatedUser
-    } else {
-      // Создаем нового пользователя
-      const { data: newUser, error } = await supabase
-        .from('profiles')
-        .insert({
-          telegram_id: from.id.toString(),
-          name: `${from.first_name || ''} ${from.last_name || ''}`.trim() || from.username || 'Telegram User',
-          email: from.username ? `${from.username}@telegram.tmp` : `user_${from.id}@telegram.tmp`
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Error creating user:', error)
-      } else {
-        console.log(`Created new user with Telegram ID ${from.id}`)
-      }
-
-      return newUser
+    return {
+      telegram_id: from.id.toString(),
+      name: `${from.first_name || ''} ${from.last_name || ''}`.trim() || from.username || 'Telegram User',
+      instruction: 'Нужно связать с существующим аккаунтом'
     }
   } catch (error) {
     console.error('Error in saveTelegramUser:', error)
