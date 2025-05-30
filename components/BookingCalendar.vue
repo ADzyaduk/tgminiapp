@@ -448,33 +448,18 @@ async function bookSlot() {
       prepayment: isAdminOrAgentOrManager.value ? prepayment.value : null
     } as const
 
-    // Если пользователь авторизован, сохраняем его ID
-    if (props.user) {
-      const bookingPayload = {
-        ...payload,
-        user_id: props.user.id
-      }
-      // @ts-ignore - игнорируем ошибку типизации, т.к. мы знаем структуру таблицы
-      const { error } = await supabaseClient.from('bookings').insert([bookingPayload])
+    // Создаем бронирование через API (с уведомлениями)
+    const response = await $fetch('/api/bookings', {
+      method: 'POST',
+      body: payload
+    })
 
-      if (error) {
-        toast.error('Ошибка бронирования')
-      } else {
-        toast.success('Бронирование успешно создано')
-        resetForm()
-        emit('bookingCreated')
-      }
+    if (response.status === 201) {
+      toast.success('Бронирование успешно создано')
+      resetForm()
+      emit('bookingCreated')
     } else {
-      // @ts-ignore - игнорируем ошибку типизации, т.к. мы знаем структуру таблицы
-      const { error } = await supabaseClient.from('bookings').insert([payload])
-
-      if (error) {
-        toast.error('Ошибка бронирования')
-      } else {
-        toast.success('Бронирование успешно создано')
-        resetForm()
-        emit('bookingCreated')
-      }
+      toast.error('Ошибка бронирования')
     }
   } catch (error) {
     console.error('Error in bookSlot:', error)

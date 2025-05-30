@@ -8,14 +8,17 @@ export default defineEventHandler(async (event) => {
 
     const supabase = await serverSupabaseClient(event)
 
-    // Тестовые данные бронирования
+    // Тестовые данные бронирования (правильная структура)
     const testBooking = {
       boat_id: "874f57d8-82fa-4b88-96b8-cc5e8e1066d7", // Kiss
       guest_name: "Тест Уведомлений",
       guest_phone: "+7999123456",
       start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-      total_price: 5000,
+      price: 5000, // НЕ total_price!
+      pph: 2500,   // Цена за час
+      prepayment: 1000,
+      peoples: 2,
       status: 'pending'
     }
 
