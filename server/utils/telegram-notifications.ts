@@ -16,17 +16,19 @@ export function formatBookingNotification(booking: any): string {
     minute: '2-digit'
   })
 
-  return `🆕 <b>Новое бронирование</b>
+  // Получаем телефон из guest_phone или profile.phone
+  const phoneNumber = booking.guest_phone || booking.profile?.phone || 'Не указан'
 
-ID: ${booking.id}
-Статус: <b>ожидает подтверждения</b>
-Клиент: ${booking.profile?.name || 'Не указано'} (${booking.profile?.email || 'Нет email'})
-Телефон: ${booking.profile?.phone || 'Не указан'}
+  // Получаем имя из guest_name или profile.name
+  const clientName = booking.guest_name || booking.profile?.name || 'Не указано'
+
+  // Получаем email если есть профиль
+  const emailPart = booking.profile?.email ? ` (${booking.profile.email})` : ''
+
+  return `Клиент: ${clientName}${emailPart}
+Телефон: ${phoneNumber}
 Лодка: ${booking.boat?.name || 'Не указано'}
-Дата: ${formattedDate}
-Цена: ${booking.price} ₽
-
-<i>Нажмите на кнопки ниже для управления бронированием</i>`
+Дата: ${formattedDate}`
 }
 
 /**
@@ -110,20 +112,7 @@ export async function sendAdminNotification(
             .not('telegram_id', 'is', null)
 
           if (profiles && profiles.length > 0) {
-            // Кнопки управления бронированием для инлайн-клавиатуры
-            const inlineKeyboard = bookingId ? {
-              inline_keyboard: [
-                [
-                  { text: "✅ Подтвердить", callback_data: `booking:confirm:${bookingId}` },
-                  { text: "❌ Отменить", callback_data: `booking:cancel:${bookingId}` }
-                ],
-                [
-                  { text: "🔍 Детали", callback_data: `booking:details:${bookingId}` }
-                ]
-              ]
-            } : undefined
-
-            // Отправляем уведомление каждому менеджеру
+            // Отправляем уведомление каждому менеджеру (без кнопок)
             const results = await Promise.all(
               profiles.map(async (profile: any) => {
                 try {
@@ -133,8 +122,7 @@ export async function sendAdminNotification(
                     body: JSON.stringify({
                       chat_id: profile.telegram_id,
                       text: message,
-                      parse_mode: parseMode,
-                      reply_markup: inlineKeyboard
+                      parse_mode: parseMode
                     })
                   })
 
@@ -161,27 +149,13 @@ export async function sendAdminNotification(
 
       console.log(`Sending notification to admin chat ID: ${adminChatId}`)
 
-      // Кнопки управления бронированием для инлайн-клавиатуры
-      const inlineKeyboard = bookingId ? {
-        inline_keyboard: [
-          [
-            { text: "✅ Подтвердить", callback_data: `booking:confirm:${bookingId}` },
-            { text: "❌ Отменить", callback_data: `booking:cancel:${bookingId}` }
-          ],
-          [
-            { text: "🔍 Детали", callback_data: `booking:details:${bookingId}` }
-          ]
-        ]
-      } : undefined
-
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: adminChatId,
           text: message,
-          parse_mode: parseMode,
-          reply_markup: inlineKeyboard
+          parse_mode: parseMode
         })
       })
 
