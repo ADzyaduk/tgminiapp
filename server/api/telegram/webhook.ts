@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
 
   // Получение данных запроса
   const body = await readBody(event)
-  
+
   // Проверка наличия сообщения
   if (!body || !body.message) {
     return { status: 400, body: { error: 'Invalid request' } }
@@ -19,32 +19,238 @@ export default defineEventHandler(async (event) => {
   // Получаем данные запроса
   const { message } = body
   const { chat, text, from } = message
-  
-  // Если получена команда /start
-  if (text && text.startsWith('/start')) {
-    // Отправляем приветственное сообщение с кнопкой для открытия приложения
-    return await sendWebAppButton(
-      chat.id, 
-      'Добро пожаловать! Нажмите кнопку ниже, чтобы открыть приложение для бронирования лодок.',
-      'Открыть'
-    )
+
+  // Получаем клиент Supabase
+  const supabase = serverSupabaseClient(event)
+
+  // Обработка команд
+  if (text && text.startsWith('/')) {
+    const command = text.split(' ')[0].toLowerCase()
+
+    switch (command) {
+      case '/start':
+        return await handleStartCommand(chat.id, from, supabase)
+
+      case '/help':
+        return await handleHelpCommand(chat.id)
+
+      case '/mybookings':
+        return await handleMyBookingsCommand(chat.id, from, supabase)
+
+      case '/status':
+        return await handleStatusCommand(chat.id, from, supabase)
+
+      case '/boats':
+        return await handleBoatsCommand(chat.id, supabase)
+
+      default:
+        return await sendMessage(chat.id, '❓ Неизвестная команда. Используйте /help для просмотра доступных команд.')
+    }
   }
 
   return { status: 200, body: { success: true } }
 })
 
+// Обработка команды /start
+async function handleStartCommand(chatId: number, from: any, supabase: any) {
+  // Проверяем, есть ли пользователь в базе
+  const { data: user } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('telegram_id', from.id.toString())
+    .single()
+
+  let message = ''
+
+  if (user) {
+    message = `👋 С возвращением, ${user.name || from.first_name}!\n\n`
+  } else {
+    message = `👋 Добро пожаловать в систему бронирования лодок!\n\n`
+  }
+
+  message += `🛥️ <b>Что я умею:</b>
+• 📱 Открывать приложение для бронирования
+• 📋 Показывать ваши бронирования
+• 🔔 Присылать уведомления о статусе
+• ℹ️ Предоставлять информацию о лодках
+
+Используйте /help для подробного списка команд или нажмите кнопку ниже для открытия приложения.`
+
+  return await sendWebAppButton(chatId, message, '🚀 Открыть приложение')
+}
+
+// Обработка команды /help
+async function handleHelpCommand(chatId: number) {
+  const message = `📖 <b>Доступные команды:</b>
+
+/start - Главное меню и кнопка открытия приложения
+/help - Показать это сообщение
+/mybookings - Мои бронирования
+/status - Проверить статус последнего бронирования
+/boats - Список доступных лодок
+
+🔔 <b>Уведомления:</b>
+Я автоматически присылаю уведомления о:
+• Подтверждении бронирования
+• Отмене бронирования
+• Напоминаниях перед поездкой
+
+📱 <b>Приложение:</b>
+Нажмите /start чтобы получить кнопку для открытия полного приложения.`
+
+  return await sendMessage(chatId, message)
+}
+
+// Обработка команды /mybookings
+async function handleMyBookingsCommand(chatId: number, from: any, supabase: any) {
+  // Ищем пользователя в базе
+  const { data: user } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('telegram_id', from.id.toString())
+    .single()
+
+  if (!user) {
+    const message = `❌ Вы не зарегистрированы в системе.
+
+Пожалуйста, сначала зайдите в приложение через кнопку "Открыть приложение" в команде /start и создайте профиль.`
+
+    return await sendMessage(chatId, message)
+  }
+
+  // Получаем бронирования пользователя
+  const { data: bookings } = await supabase
+    .from('bookings')
+    .select('*, boat:boat_id(name)')
+    .eq('user_id', user.id)
+    .order('start_time', { ascending: false })
+    .limit(5)
+
+  if (!bookings || bookings.length === 0) {
+    return await sendMessage(chatId, '📋 У вас пока нет бронирований.\n\nИспользуйте /start чтобы открыть приложение и забронировать лодку.')
+  }
+
+  let message = '📋 <b>Ваши последние бронирования:</b>\n\n'
+
+  bookings.forEach((booking: any, index: number) => {
+    const statusEmoji: Record<string, string> = {
+      pending: '⏳',
+      confirmed: '✅',
+      cancelled: '❌'
+    }
+
+    const emoji = statusEmoji[booking.status] || '🔔'
+
+    const date = new Date(booking.start_time).toLocaleDateString('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+
+    message += `${index + 1}. ${emoji} <b>${booking.boat?.name || 'Лодка'}</b>
+📅 ${date}
+💰 ${booking.price} ₽
+📊 Статус: ${booking.status === 'pending' ? 'Ожидает подтверждения' : booking.status === 'confirmed' ? 'Подтверждено' : 'Отменено'}
+
+`
+  })
+
+  message += '\nИспользуйте /start для создания новых бронирований.'
+
+  return await sendMessage(chatId, message)
+}
+
+// Обработка команды /status
+async function handleStatusCommand(chatId: number, from: any, supabase: any) {
+  // Ищем пользователя в базе
+  const { data: user } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('telegram_id', from.id.toString())
+    .single()
+
+  if (!user) {
+    return await sendMessage(chatId, '❌ Вы не зарегистрированы в системе.')
+  }
+
+  // Получаем последнее бронирование
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('*, boat:boat_id(name)')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (!booking) {
+    return await sendMessage(chatId, '📋 У вас нет бронирований.')
+  }
+
+  const statusEmoji: Record<string, string> = {
+    pending: '⏳',
+    confirmed: '✅',
+    cancelled: '❌'
+  }
+
+  const emoji = statusEmoji[booking.status] || '🔔'
+
+  const date = new Date(booking.start_time).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const message = `${emoji} <b>Последнее бронирование</b>
+
+🛥️ Лодка: ${booking.boat?.name || 'Не указано'}
+📅 Дата: ${date}
+💰 Цена: ${booking.price} ₽
+📊 Статус: ${booking.status === 'pending' ? 'Ожидает подтверждения' : booking.status === 'confirmed' ? 'Подтверждено' : 'Отменено'}
+
+${booking.status === 'pending' ? '⏳ Ожидайте подтверждения от администратора.' : ''}
+${booking.status === 'confirmed' ? '✅ Ваше бронирование подтверждено! Увидимся в назначенное время.' : ''}
+${booking.status === 'cancelled' ? '❌ К сожалению, бронирование было отменено.' : ''}`
+
+  return await sendMessage(chatId, message)
+}
+
+// Обработка команды /boats
+async function handleBoatsCommand(chatId: number, supabase: any) {
+  const { data: boats } = await supabase
+    .from('boats')
+    .select('*')
+    .eq('active', true)
+    .order('name')
+
+  if (!boats || boats.length === 0) {
+    return await sendMessage(chatId, '🛥️ В данный момент лодки недоступны.')
+  }
+
+  let message = '🛥️ <b>Доступные лодки:</b>\n\n'
+
+  boats.forEach((boat: any, index: number) => {
+    message += `${index + 1}. <b>${boat.name}</b>
+💰 От ${boat.price} ₽/час
+👥 Вместимость: ${boat.capacity} человек
+${boat.description ? `📝 ${boat.description}` : ''}
+
+`
+  })
+
+  message += '\nИспользуйте /start чтобы открыть приложение и забронировать лодку.'
+
+  return await sendMessage(chatId, message)
+}
+
 // Функция для отправки сообщения с кнопкой WebApp
 async function sendWebAppButton(chatId: number, text: string, buttonText: string) {
-  // Получаем Bot API Token из переменных окружения
   const token = process.env.TELEGRAM_BOT_TOKEN
-  
-  // URL вашего Telegram Mini App
   const webAppUrl = process.env.TELEGRAM_WEBAPP_URL || 'https://your-app-url.com'
-  
-  // Формируем запрос к Telegram Bot API
+
   const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-  
-  // Формируем клавиатуру с WebApp кнопкой
+
   const keyboard = {
     inline_keyboard: [
       [
@@ -52,11 +258,20 @@ async function sendWebAppButton(chatId: number, text: string, buttonText: string
           text: buttonText,
           web_app: { url: webAppUrl }
         }
+      ],
+      [
+        {
+          text: "📋 Мои бронирования",
+          callback_data: "my_bookings"
+        },
+        {
+          text: "ℹ️ Помощь",
+          callback_data: "help"
+        }
       ]
     ]
   }
-  
-  // Отправляем запрос к Telegram API
+
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -66,14 +281,41 @@ async function sendWebAppButton(chatId: number, text: string, buttonText: string
       body: JSON.stringify({
         chat_id: chatId,
         text: text,
+        parse_mode: 'HTML',
         reply_markup: keyboard
       })
     })
-    
+
     const data = await response.json()
     return { status: 200, body: data }
   } catch (error) {
     console.error('Error sending message to Telegram:', error)
     return { status: 500, body: { error: 'Failed to send message' } }
   }
-} 
+}
+
+// Функция для отправки обычного сообщения
+async function sendMessage(chatId: number, text: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML'
+      })
+    })
+
+    const data = await response.json()
+    return { status: 200, body: data }
+  } catch (error) {
+    console.error('Error sending message to Telegram:', error)
+    return { status: 500, body: { error: 'Failed to send message' } }
+  }
+}

@@ -17,6 +17,7 @@
     "@pinia/nuxt": "^0.11.0",
     "@supabase/supabase-js": "^2.49.8",
     "cookie-es": "^2.0.0",
+    "crypto-js": "^4.1.1",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
     "gsap": "^3.13.0",
