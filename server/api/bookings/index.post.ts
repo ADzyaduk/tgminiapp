@@ -40,20 +40,33 @@ export default defineEventHandler(async (event) => {
     // Отправляем уведомление администраторам
     if (booking) {
       try {
+        console.log('📧 Starting notification process for booking:', booking.id)
+
         // Формируем текст уведомления
         const notificationMessage = formatBookingNotification(booking)
+        console.log('📝 Notification message formatted')
 
         // Отправляем уведомление с кнопками для подтверждения/отмены
-        await sendAdminNotification(notificationMessage, {
+        console.log('🚀 Calling sendAdminNotification with:', {
+          boatId: booking.boat_id,
+          bookingId: booking.id,
+          hasEvent: !!event
+        })
+
+        const notificationResult = await sendAdminNotification(notificationMessage, {
           parseMode: 'HTML',
           boatId: booking.boat_id as string,
           bookingId: booking.id as string,
           event
         })
+
+        console.log('✅ Notification result:', notificationResult)
       } catch (notifyError) {
         // Логируем ошибку, но не влияем на основной ответ API
-        console.error('Failed to send notification:', notifyError)
+        console.error('❌ Failed to send notification:', notifyError)
       }
+    } else {
+      console.log('⚠️ No booking created, skipping notification')
     }
 
     return {
