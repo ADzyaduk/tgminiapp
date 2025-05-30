@@ -2,14 +2,8 @@
   <section class="mb-8 space-y-6">
     <header class="flex items-center justify-between mb-6">
       <h2 class="text-xl font-semibold">Управление бронированиями групповых поездок</h2>
-      <UButton
-        variant="ghost"
-        icon="i-heroicons-arrow-path"
-        aria-label="Обновить"
-        @click="loadGroupBookings"
-        :loading="loading"
-        color="primary"
-      />
+      <UButton variant="ghost" icon="i-heroicons-arrow-path" aria-label="Обновить" @click="loadGroupBookings"
+        :loading="loading" color="primary" />
     </header>
 
     <!-- Лоадер или список -->
@@ -21,11 +15,7 @@
 
       <div v-else>
         <div v-if="groupedBookings.length">
-          <div
-            v-for="group in groupedBookings"
-            :key="group.trip_id"
-            class="mb-8 p-4 rounded-lg shadow-sm bg-muted"
-          >
+          <div v-for="group in groupedBookings" :key="group.trip_id" class="mb-8 p-4 rounded-lg shadow-sm bg-muted">
             <h3 class="text-lg font-semibold flex items-center gap-2 mb-4">
               <UIcon name="i-heroicons-user-group" />
               {{ group.trip_name }} ({{ formatDate(group.trip_start_time) }} {{ formatTime(group.trip_start_time) }})
@@ -37,7 +27,8 @@
                 <template #header>
                   <div class="flex items-center justify-between">
                     <h4 class="font-medium">{{ booking.guest_name }}</h4>
-                    <UBadge :color="getBookingStatusColor(booking.status)" variant="subtle">{{ formatBookingStatus(booking.status) }}</UBadge>
+                    <UBadge :color="getBookingStatusColor(booking.status)" variant="subtle">{{
+                      formatBookingStatus(booking.status) }}</UBadge>
                   </div>
                 </template>
 
@@ -53,26 +44,16 @@
                     <p class="text-xs text-gray-400 mt-1">Создано: {{ formatDate(booking.created_at, true) }}</p>
                   </div>
                 </div>
-                
+
                 <!-- Действия с бронированием (пример) -->
                 <template #footer v-if="booking.status === 'confirmed'">
                   <div class="flex gap-2">
-                    <UButton 
-                      size="xs" 
-                      color="red" 
-                      variant="outline" 
-                      @click="updateBookingStatus(booking.id, 'cancelled')"
-                      :loading="updatingStatus === booking.id"
-                    >
+                    <UButton size="xs" color="error" variant="outline"
+                      @click="updateBookingStatus(booking.id, 'cancelled')" :loading="updatingStatus === booking.id">
                       Отменить бронь
                     </UButton>
-                     <UButton 
-                      size="xs" 
-                      color="green" 
-                      variant="outline" 
-                      @click="updateBookingStatus(booking.id, 'completed')"
-                      :loading="updatingStatus === booking.id"
-                    >
+                    <UButton size="xs" color="success" variant="outline"
+                      @click="updateBookingStatus(booking.id, 'completed')" :loading="updatingStatus === booking.id">
                       Завершить (оплачено)
                     </UButton>
                   </div>
@@ -91,11 +72,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useSupabaseClient } from '#imports'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, isSameDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import type { Database } from '~/types/supabase'
+import { useDateStore } from '~/stores/useDateStore'
 
 type GroupBookingRow = Database['public']['Tables']['group_trip_bookings']['Row']
 type GroupTripRow = Database['public']['Tables']['group_trips']['Row']
@@ -115,6 +97,7 @@ const props = defineProps<{ boatId: string }>()
 
 const supabase = useSupabaseClient<Database>()
 const toast = useToast()
+const dateStore = useDateStore()
 
 const bookings = ref<EnrichedGroupBooking[]>([])
 const loading = ref(true)
@@ -123,6 +106,13 @@ const updatingStatus = ref<string | null>(null)
 const loadGroupBookings = async () => {
   loading.value = true
   try {
+    // Получаем выбранную дату
+    const selectedDateObj = dateStore.selectedDate.toDate('UTC')
+    const startOfDay = new Date(selectedDateObj)
+    startOfDay.setHours(0, 0, 0, 0)
+    const endOfDay = new Date(selectedDateObj)
+    endOfDay.setHours(23, 59, 59, 999)
+
     const { data, error } = await supabase
       .from('group_trip_bookings')
       .select(`
@@ -135,6 +125,8 @@ const loadGroupBookings = async () => {
         )
       `)
       .eq('group_trips.boat_id', props.boatId)
+      .gte('group_trips.start_time', startOfDay.toISOString())
+      .lte('group_trips.start_time', endOfDay.toISOString())
       .order('created_at', { ascending: false })
 
     if (error) throw error
@@ -149,6 +141,7 @@ const loadGroupBookings = async () => {
 
 const groupedBookings = computed(() => {
   const groups: Record<string, GroupedBookingDetail> = {}
+
   for (const booking of bookings.value) {
     if (booking.group_trips) {
       const tripId = booking.group_trip_id
@@ -234,6 +227,11 @@ const updateBookingStatus = async (bookingId: string, newStatus: 'confirmed' | '
   }
 }
 
+// Добавляем watch для перезагрузки бронирований при изменении даты
+watch(() => dateStore.selectedDate, () => {
+  loadGroupBookings()
+})
+
 onMounted(() => {
   loadGroupBookings()
 })
@@ -242,4 +240,4 @@ onMounted(() => {
 
 <style scoped>
 /* Стили можно добавить по необходимости */
-</style> 
+</style>

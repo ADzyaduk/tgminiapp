@@ -6,7 +6,7 @@
       <p class="text-lg">Доступ запрещен</p>
       <p class="text-sm text-gray-500">У вас нет прав для управления бронированиями этой лодки</p>
     </div>
-    
+
     <div v-else>
       <header class="flex items-center justify-between mb-6">
         <h2 class="text-xl font-semibold">Управление бронированиями</h2>
@@ -23,25 +23,13 @@
         </ClientOnly>
 
         <div class="flex flex-wrap gap-2">
-          <UButton
-            v-for="f in FILTER_KEYS"
-            :key="f"
-            :variant="activeFilter === f ? 'solid' : 'outline'"
-            size="sm"
-            :color="activeFilter === f ? 'primary' : 'neutral'"
-            @click="activeFilter = f"
-          >
+          <UButton v-for="f in FILTER_KEYS" :key="f" :variant="activeFilter === f ? 'solid' : 'outline'" size="sm"
+            :color="activeFilter === f ? 'primary' : 'neutral'" @click="activeFilter = f">
             {{ FILTERS[f] }}
           </UButton>
 
-          <UButton
-            variant="ghost"
-            icon="i-heroicons-arrow-path"
-            aria-label="Обновить"
-            @click="loadBookings"
-            :loading="loading"
-            color="primary"
-          />
+          <UButton variant="ghost" icon="i-heroicons-arrow-path" aria-label="Обновить" @click="loadBookings"
+            :loading="loading" color="primary" />
         </div>
       </div>
 
@@ -53,31 +41,33 @@
         </div>
 
         <div v-else>
-          <div v-if="groups.length">
-            <div
-              v-for="g in groups"
-              :key="g.status"
-              class="mb-8 p-4 rounded-lg shadow-sm bg-muted"
-            >
+          <div v-if="groups.length || cancelledBookings.length">
+            <!-- Отображаем активные группы -->
+            <div v-for="g in groups" :key="g.status" class="mb-8 p-4 rounded-lg shadow-sm bg-muted">
               <h3 class="text-lg font-semibold flex items-center gap-2 mb-4">
-                <span
-                  class="w-3 h-3 rounded-full"
-                  :class="statusConfig[g.status].class"
-                ></span>
+                <span class="w-3 h-3 rounded-full" :class="statusConfig[g.status].class"></span>
                 {{ statusConfig[g.status].title }}
                 <UBadge variant="soft" color="neutral">{{ g.bookings.length }}</UBadge>
               </h3>
 
               <TransitionGroup name="list" tag="div">
-                <BookingCard
-                  v-for="b in g.bookings"
-                  :key="b.id"
-                  :booking="b"
-                  @update-status="updateStatus"
-                  class="mb-4"
-                />
+                <BookingCard v-for="b in g.bookings" :key="b.id" :booking="b" @update-status="updateStatus"
+                  class="mb-4" />
               </TransitionGroup>
             </div>
+
+            <!-- Аккордеон с отмененными бронированиями -->
+            <UAccordion v-if="cancelledBookings.length > 0" :items="[{
+              label: `Отмененные бронирования (${cancelledBookings.length})`,
+              icon: 'i-heroicons-x-circle',
+              slot: 'cancelled'
+            }]" class="mb-8">
+              <template #cancelled>
+                <div class="space-y-4">
+                  <BookingCard v-for="b in cancelledBookings" :key="b.id" :booking="b" @update-status="updateStatus" />
+                </div>
+              </template>
+            </UAccordion>
           </div>
           <div v-else class="text-center py-12 rounded-lg shadow-sm bg-muted">
             <UIcon name="i-heroicons-calendar" class="w-12 h-12 mx-auto mb-4" />
@@ -88,11 +78,7 @@
 
       <!-- Back button -->
       <div class="mb-4">
-        <UButton 
-          icon="i-heroicons-arrow-left" 
-          variant="soft" 
-          @click="goBack"
-          class="mb-2">
+        <UButton icon="i-heroicons-arrow-left" variant="soft" @click="goBack" class="mb-2">
           Вернуться к списку
         </UButton>
       </div>
@@ -174,8 +160,8 @@ const formattedDate = computed(() => {
     if (!selectedDate.value) {
       return 'Выберите дату'
     }
-    const iso = selectedDate.value.toDate('UTC').toISOString().slice(0,10)
-    const [y,m,d] = iso.split('-')
+    const iso = selectedDate.value.toDate('UTC').toISOString().slice(0, 10)
+    const [y, m, d] = iso.split('-')
     return `${d}.${m}.${y.slice(-2)}`
   } catch (error) {
     console.error('Error formatting date:', error)
@@ -199,8 +185,8 @@ async function loadBookings() {
     }
 
     const js = selectedDate.value.toDate('UTC')
-    const dayStart = new Date(js); dayStart.setUTCHours(0,0,0,0)
-    const dayEnd = new Date(js); dayEnd.setUTCHours(23,59,59,999)
+    const dayStart = new Date(js); dayStart.setUTCHours(0, 0, 0, 0)
+    const dayEnd = new Date(js); dayEnd.setUTCHours(23, 59, 59, 999)
 
     // Ищем бронирования, где:
     // 1. Начало бронирования до конца дня И
@@ -239,12 +225,19 @@ const groups = computed(() => {
     { pending: [], confirmed: [], cancelled: [] }
   )
 
+  // Возвращаем только активные статусы (не отмененные)
   return (Object.values(Status) as Status[])
+    .filter(status => status !== Status.cancelled) // Исключаем отмененные
     .map(status => ({ status, bookings: map[status] }))
     .filter(g =>
       g.bookings.length > 0 &&
       (activeFilter.value === Filter.all || g.status === Status.pending)
     )
+})
+
+// Отдельное computed свойство для отмененных бронирований
+const cancelledBookings = computed(() => {
+  return bookings.value.filter(b => b.status === Status.cancelled)
 })
 
 // Оптимистичное обновление статуса
@@ -284,15 +277,15 @@ onMounted(() => {
     today.getMonth() + 1,
     today.getDate()
   )
-  
+
   const selectedDateJs = selectedDate.value.toDate('UTC')
   const todayJs = today
-  
+
   // Если выбранная дата раньше сегодня, обновляем её
   if (selectedDateJs < todayJs) {
     dateStore.setDate(currentDate)
   }
-  
+
   loadBookings()
 })
 
@@ -300,10 +293,10 @@ const searchBookings = async (startDate, endDate) => {
   try {
     const dayStart = new Date(startDate)
     dayStart.setHours(0, 0, 0, 0)
-    
+
     const dayEnd = new Date(endDate)
     dayEnd.setHours(23, 59, 59, 999)
-    
+
     const { data, error } = await supabase
       .from('bookings')
       .select(`
@@ -316,9 +309,9 @@ const searchBookings = async (startDate, endDate) => {
       .gte('start_time', dayStart.toISOString())
       .lte('start_time', dayEnd.toISOString())
       .order('start_time', { ascending: true })
-    
+
     if (error) throw error
-    
+
     return data || []
   } catch (error) {
     console.error('Ошибка поиска бронирований:', error)
@@ -350,4 +343,4 @@ const searchBookings = async (startDate, endDate) => {
 :deep(.u-calendar-title) {
   @apply text-center;
 }
-</style> 
+</style>
