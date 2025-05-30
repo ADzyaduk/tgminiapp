@@ -240,34 +240,6 @@ ${booking.status === 'cancelled' ? '❌ К сожалению, брониров�
   return await sendMessage(chatId, message)
 }
 
-// Обработка команды /boats
-async function handleBoatsCommand(chatId: number, supabase: any) {
-  const { data: boats } = await supabase
-    .from('boats')
-    .select('*')
-    .eq('active', true)
-    .order('name')
-
-  if (!boats || boats.length === 0) {
-    return await sendMessage(chatId, '🛥️ В данный момент лодки недоступны.')
-  }
-
-  let message = '🛥️ <b>Доступные лодки:</b>\n\n'
-
-  boats.forEach((boat: any, index: number) => {
-    message += `${index + 1}. <b>${boat.name}</b>
-💰 От ${boat.price} ₽/час
-👥 Вместимость: ${boat.capacity} человек
-${boat.description ? `📝 ${boat.description}` : ''}
-
-`
-  })
-
-  message += '\nИспользуйте /start чтобы открыть приложение и забронировать лодку.'
-
-  return await sendMessage(chatId, message)
-}
-
 // Функция для отправки сообщения с кнопкой WebApp
 async function sendWebAppButton(chatId: number, text: string, buttonText: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN
