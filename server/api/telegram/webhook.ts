@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   const { chat, text, from } = message
 
   // Получаем клиент Supabase
-  const supabase = serverSupabaseClient(event)
+  const supabase = await serverSupabaseClient(event)
 
   // Обработка команд
   if (text && text.startsWith('/')) {
