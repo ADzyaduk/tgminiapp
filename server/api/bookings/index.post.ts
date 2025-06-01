@@ -1,6 +1,11 @@
 import { defineEventHandler, readBody } from 'h3'
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
-import { formatBookingNotification, sendAdminNotification } from '~/server/utils/telegram-notifications'
+import {
+  formatBookingNotification,
+  formatBookingNotificationEnhanced,
+  sendAdminNotification,
+  sendClientBookingConfirmation
+} from '~/server/utils/telegram-notifications'
 
 export default defineEventHandler(async (event) => {
   try {
@@ -37,36 +42,46 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // Отправляем уведомление администраторам
+    // Отправляем уведомления
     if (booking) {
       try {
-        console.log('📧 Starting notification process for booking:', booking.id)
+        console.log('📧 Starting notification process for booking:', (booking as any).id)
 
-        // Формируем текст уведомления
-        const notificationMessage = formatBookingNotification(booking)
-        console.log('📝 Notification message formatted')
+        // Формируем улучшенный текст уведомления для менеджеров
+        const notificationMessage = formatBookingNotificationEnhanced(booking)
+        console.log('📝 Enhanced notification message formatted')
 
-        // Отправляем уведомление с кнопками для подтверждения/отмены
+        // Отправляем уведомление менеджерам с кнопками для подтверждения/отмены
         console.log('🚀 Calling sendAdminNotification with:', {
-          boatId: booking.boat_id,
-          bookingId: booking.id,
+          boatId: (booking as any).boat_id,
+          bookingId: (booking as any).id,
           hasEvent: !!event
         })
 
         const notificationResult = await sendAdminNotification(notificationMessage, {
           parseMode: 'HTML',
-          boatId: booking.boat_id as string,
-          bookingId: booking.id as string,
+          boatId: (booking as any).boat_id as string,
+          bookingId: (booking as any).id as string,
           event
         })
 
-        console.log('✅ Notification result:', notificationResult)
+        console.log('✅ Manager notification result:', notificationResult)
+
+        // Отправляем подтверждение клиенту, если у него есть Telegram ID
+        if ((booking as any).profile?.telegram_id) {
+          console.log('📱 Sending booking confirmation to client:', (booking as any).profile.telegram_id)
+
+          const clientNotificationResult = await sendClientBookingConfirmation(booking)
+          console.log('✅ Client confirmation result:', clientNotificationResult)
+        } else {
+          console.log('ℹ️ Client has no telegram_id, skipping client confirmation')
+        }
       } catch (notifyError) {
         // Логируем ошибку, но не влияем на основной ответ API
-        console.error('❌ Failed to send notification:', notifyError)
+        console.error('❌ Failed to send notifications:', notifyError)
       }
     } else {
-      console.log('⚠️ No booking created, skipping notification')
+      console.log('⚠️ No booking created, skipping notifications')
     }
 
     return {

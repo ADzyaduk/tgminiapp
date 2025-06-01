@@ -248,20 +248,33 @@ async function updateStatus(id: string, newStatus: Status) {
   )
 
   try {
-    const { error } = await supabase
-      .from('bookings')
-      .update({ status: newStatus })
-      .eq('id', id)
+    // Используем наш API endpoint вместо прямого обращения к Supabase
+    // Это обеспечит отправку уведомлений через систему телеграм
+    const response = await $fetch(`/api/bookings/${id}/status`, {
+      method: 'PATCH',
+      body: { status: newStatus }
+    })
 
-    if (error) {
+    if (response.status !== 200) {
       bookings.value = backup
       toast.error('Не удалось обновить статус')
     } else {
-      toast.success('Статус обновлён')
+      toast.success('Статус обновлён. Уведомления отправлены!')
     }
-  } catch (e) {
+  } catch (error: any) {
+    console.error('Error updating booking status:', error)
     bookings.value = backup
-    toast.error('Ошибка обновления')
+
+    // Более детальная обработка ошибок
+    if (error.status === 401) {
+      toast.error('Доступ запрещен')
+    } else if (error.status === 403) {
+      toast.error('У вас нет прав для изменения этого бронирования')
+    } else if (error.status === 404) {
+      toast.error('Бронирование не найдено')
+    } else {
+      toast.error('Ошибка обновления статуса')
+    }
   }
 }
 

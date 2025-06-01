@@ -1,5 +1,6 @@
-import { defineEventHandler } from 'h3'
+import { defineEventHandler, readBody } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
+import { sendBookingReminder } from '~/server/utils/telegram-notifications'
 
 /**
  * API для отправки напоминаний о предстоящих бронированиях
@@ -7,24 +8,20 @@ import { serverSupabaseClient } from '#supabase/server'
  */
 export default defineEventHandler(async (event) => {
   try {
+    const { hours = 24 } = await readBody(event) // По умолчанию за 24 часа
+
     const supabase = await serverSupabaseClient(event)
 
-    // Получаем все подтвержденные бронирования на завтра
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
-    const startOfDay = new Date(tomorrow)
-    startOfDay.setHours(0, 0, 0, 0)
-
-    const endOfDay = new Date(tomorrow)
-    endOfDay.setHours(23, 59, 59, 999)
+    // Получаем подтвержденные бронирования, которые начинаются через указанное количество часов
+    const targetTime = new Date()
+    targetTime.setHours(targetTime.getHours() + hours)
 
     const { data: bookings, error } = await supabase
       .from('bookings')
-      .select('*, profile:user_id(*), boat:boat_id(*)')
+      .select('*, profile:user_id(*), boat:boat_id(name)')
       .eq('status', 'confirmed')
-      .gte('start_time', startOfDay.toISOString())
-      .lte('start_time', endOfDay.toISOString())
+      .gte('start_time', new Date().toISOString())
+      .lte('start_time', targetTime.toISOString())
       .not('profile.telegram_id', 'is', null)
 
     if (error) {
@@ -33,76 +30,36 @@ export default defineEventHandler(async (event) => {
     }
 
     if (!bookings || bookings.length === 0) {
-      return { status: 200, body: { message: 'No bookings to remind about' } }
+      return { status: 200, body: { message: 'No bookings found for reminders', sent: 0 } }
     }
 
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) {
-      return { status: 500, body: { error: 'Telegram token not configured' } }
-    }
-
-    // Отправляем напоминания каждому клиенту
-    const results = await Promise.all(
+    // Отправляем напоминания
+    let successCount = 0
+    const results = await Promise.allSettled(
       bookings.map(async (booking: any) => {
         try {
-          const startTime = new Date(booking.start_time)
-          const formattedTime = startTime.toLocaleDateString('ru-RU', {
-            hour: '2-digit',
-            minute: '2-digit',
-            day: 'numeric',
-            month: 'long'
-          })
-
-          const message = `🔔 <b>Напоминание о бронировании</b>
-
-🛥️ Лодка: <b>${booking.boat?.name || 'Не указано'}</b>
-📅 Завтра, ${formattedTime}
-💰 Цена: ${booking.price} ₽
-
-📍 Не забудьте прийти вовремя!
-📞 При необходимости свяжитесь с нами через приложение.
-
-Хорошего отдыха! 🌊`
-
-          const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: booking.profile.telegram_id,
-              text: message,
-              parse_mode: 'HTML'
-            })
-          })
-
-          return {
-            bookingId: booking.id,
-            success: response.ok,
-            userId: booking.profile.id
-          }
+          const hoursUntil = Math.round((new Date(booking.start_time).getTime() - new Date().getTime()) / (1000 * 60 * 60))
+          const success = await sendBookingReminder(booking, hoursUntil)
+          if (success) successCount++
+          return { bookingId: booking.id, success }
         } catch (error) {
           console.error(`Failed to send reminder for booking ${booking.id}:`, error)
-          return {
-            bookingId: booking.id,
-            success: false,
-            error: error
-          }
+          return { bookingId: booking.id, success: false, error }
         }
       })
     )
 
-    // Логируем результаты
-    const successCount = results.filter(r => r.success).length
-    const failCount = results.filter(r => !r.success).length
-
-    console.log(`Reminders sent: ${successCount} success, ${failCount} failed`)
+    console.log(`📅 Sent ${successCount} reminders out of ${bookings.length} bookings`)
 
     return {
       status: 200,
       body: {
-        message: `Sent ${successCount} reminders, ${failCount} failed`,
-        results
+        message: `Sent ${successCount} reminders`,
+        total: bookings.length,
+        sent: successCount,
+        results: results.map(result =>
+          result.status === 'fulfilled' ? result.value : { error: result.reason }
+        )
       }
     }
   } catch (error) {
@@ -110,3 +67,56 @@ export default defineEventHandler(async (event) => {
     return { status: 500, body: { error: 'Internal server error' } }
   }
 })
+
+/**
+ * Автоматическая отправка напоминаний
+ * Вызывается по CRON или вручную
+ */
+export async function sendAutomaticReminders() {
+  try {
+    const supabase = await serverSupabaseClient({} as any)
+
+    // Напоминания за 24 часа
+    const tomorrow = new Date()
+    tomorrow.setHours(tomorrow.getHours() + 24)
+
+    // Напоминания за 2 часа
+    const in2Hours = new Date()
+    in2Hours.setHours(in2Hours.getHours() + 2)
+
+    const timeRanges = [
+      { hours: 24, label: '24 часа' },
+      { hours: 2, label: '2 часа' }
+    ]
+
+    for (const range of timeRanges) {
+      const targetTime = new Date()
+      targetTime.setHours(targetTime.getHours() + range.hours)
+
+      const startTime = new Date(targetTime.getTime() - 30 * 60 * 1000) // 30 минут назад
+      const endTime = new Date(targetTime.getTime() + 30 * 60 * 1000)   // 30 минут вперед
+
+      const { data: bookings } = await supabase
+        .from('bookings')
+        .select('*, profile:user_id(*), boat:boat_id(name)')
+        .eq('status', 'confirmed')
+        .gte('start_time', startTime.toISOString())
+        .lte('start_time', endTime.toISOString())
+        .not('profile.telegram_id', 'is', null)
+
+      if (bookings && bookings.length > 0) {
+        console.log(`📅 Sending ${range.label} reminders for ${bookings.length} bookings`)
+
+        for (const booking of bookings) {
+          try {
+            await sendBookingReminder(booking, range.hours)
+          } catch (error) {
+            console.error(`Failed to send ${range.label} reminder for booking ${(booking as any).id}:`, error)
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in automatic reminders:', error)
+  }
+}

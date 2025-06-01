@@ -1,6 +1,10 @@
 import { defineEventHandler, readBody } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
-import { formatStatusNotification, sendAdminNotification } from '~/server/utils/telegram-notifications'
+import {
+  formatStatusNotification,
+  sendAdminNotification,
+  sendClientStatusNotification
+} from '~/server/utils/telegram-notifications'
 
 // Обработчик callback-запросов от Telegram Bot
 export default defineEventHandler(async (event) => {
@@ -143,38 +147,27 @@ export default defineEventHandler(async (event) => {
       .eq('id', bookingId)
       .single()
 
+    // Получаем информацию о менеджере
+    const { data: managerProfile } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('telegram_id', from.id.toString())
+      .single()
+
+    const managerName = (managerProfile as any)?.name || 'Менеджер'
+
     // Отправляем подтверждение действия
     await sendTelegramResponse(
       message.chat.id,
-      `${responseMessage} для клиента ${booking.profile.name || 'Нет имени'} на ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
+      `${responseMessage} для клиента ${(booking as any).profile?.name || 'Нет имени'} на ${new Date((booking as any).start_time).toLocaleDateString('ru-RU')}`,
       message.message_id
     )
 
-    // Отправляем уведомление клиенту, если у него есть Telegram ID
-    if (updatedBooking.profile?.telegram_id) {
+    // Отправляем улучшенное уведомление клиенту
+    if (updatedBooking) {
       try {
-        // Сообщения для разных статусов
-        const statusMessages: Record<string, string> = {
-          confirmed: `✅ Ваше бронирование лодки "${updatedBooking.boat.name}" на ${new Date(updatedBooking.start_time).toLocaleDateString('ru-RU')} подтверждено!`,
-          cancelled: `❌ Ваше бронирование лодки "${updatedBooking.boat.name}" на ${new Date(updatedBooking.start_time).toLocaleDateString('ru-RU')} было отменено.`
-        }
-
-        const message = statusMessages[newStatus] || 'Статус вашего бронирования изменен'
-
-        const token = process.env.TELEGRAM_BOT_TOKEN
-        if (token) {
-          const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-          await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: updatedBooking.profile.telegram_id,
-              text: message,
-              parse_mode: 'HTML'
-            })
-          })
-        }
+        console.log('📱 Sending enhanced status notification to client from callback')
+        await sendClientStatusNotification(updatedBooking, newStatus, managerName)
       } catch (notifyError) {
         console.error('Failed to send notification to client:', notifyError)
       }
@@ -186,8 +179,8 @@ export default defineEventHandler(async (event) => {
 
       await sendAdminNotification(notificationMessage, {
         parseMode: 'HTML',
-        boatId: updatedBooking.boat_id,
-        bookingId: updatedBooking.id
+        boatId: (updatedBooking as any).boat_id,
+        bookingId: (updatedBooking as any).id
       })
     } catch (notifyError) {
       console.error('Failed to update admin notifications:', notifyError)

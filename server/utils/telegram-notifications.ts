@@ -241,3 +241,277 @@ export async function sendBoatManagersNotification(
     return false
   }
 }
+
+/**
+ * Отправляет красивое уведомление клиенту об изменении статуса бронирования
+ */
+export async function sendClientStatusNotification(
+  booking: any,
+  status: string,
+  managerName?: string
+): Promise<boolean> {
+  // Проверяем наличие Telegram ID у клиента
+  if (!booking.profile?.telegram_id) {
+    console.log('Client has no telegram_id, skipping notification')
+    return false
+  }
+
+  const statusConfig = {
+    pending: {
+      emoji: '⏳',
+      title: 'Бронирование получено',
+      description: 'Ваше бронирование поступило к нам и ожидает подтверждения менеджера.',
+      color: '🟡'
+    },
+    confirmed: {
+      emoji: '✅',
+      title: 'Бронирование подтверждено',
+      description: 'Отлично! Ваше бронирование подтверждено. Ждём вас в указанное время!',
+      color: '🟢'
+    },
+    cancelled: {
+      emoji: '❌',
+      title: 'Бронирование отменено',
+      description: 'К сожалению, ваше бронирование было отменено. Для уточнения деталей свяжитесь с нами.',
+      color: '🔴'
+    }
+  }
+
+  const config = statusConfig[status as keyof typeof statusConfig]
+  if (!config) return false
+
+  const formattedDate = new Date(booking.start_time).toLocaleDateString('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const formattedEndTime = new Date(booking.end_time).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const duration = Math.round((new Date(booking.end_time).getTime() - new Date(booking.start_time).getTime()) / (1000 * 60 * 60))
+
+  const managerInfo = managerName ? `\n👤 <b>Менеджер:</b> ${managerName}` : ''
+
+  const message = `${config.emoji} <b>${config.title}</b>
+
+${config.description}
+
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+📅 <b>Дата:</b> ${formattedDate}
+⏰ <b>Время:</b> ${new Date(booking.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${formattedEndTime}
+⏱️ <b>Продолжительность:</b> ${duration} ч.
+💰 <b>Стоимость:</b> ${booking.price} ₽
+👥 <b>Количество гостей:</b> ${booking.peoples || 1}${managerInfo}
+
+🆔 <b>ID бронирования:</b> #${booking.id.split('-')[0]}
+
+${status === 'confirmed' ? '🎉 <i>Хорошего отдыха!</i>' : status === 'cancelled' ? '📞 <i>При вопросах обращайтесь к администратору</i>' : '⏰ <i>Мы свяжемся с вами в ближайшее время</i>'}`
+
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) {
+      console.error('Telegram token not configured')
+      return false
+    }
+
+    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: booking.profile.telegram_id,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    })
+
+    if (response.ok) {
+      console.log(`✅ Sent status notification to client: ${booking.profile.telegram_id}`)
+      return true
+    } else {
+      console.error(`❌ Failed to send status notification to client: ${booking.profile.telegram_id}`)
+      return false
+    }
+  } catch (error) {
+    console.error('Error sending status notification to client:', error)
+    return false
+  }
+}
+
+/**
+ * Отправляет уведомление о новом бронировании клиенту (подтверждение получения)
+ */
+export async function sendClientBookingConfirmation(booking: any): Promise<boolean> {
+  // Проверяем наличие Telegram ID у клиента
+  if (!booking.profile?.telegram_id) {
+    console.log('Client has no telegram_id, skipping confirmation')
+    return false
+  }
+
+  const formattedDate = new Date(booking.start_time).toLocaleDateString('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const formattedEndTime = new Date(booking.end_time).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const duration = Math.round((new Date(booking.end_time).getTime() - new Date(booking.start_time).getTime()) / (1000 * 60 * 60))
+
+  const message = `📝 <b>Бронирование создано!</b>
+
+Спасибо за ваше обращение! Мы получили вашу заявку на бронирование.
+
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+📅 <b>Дата:</b> ${formattedDate}
+⏰ <b>Время:</b> ${new Date(booking.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${formattedEndTime}
+⏱️ <b>Продолжительность:</b> ${duration} ч.
+💰 <b>Стоимость:</b> ${booking.price} ₽
+👥 <b>Количество гостей:</b> ${booking.peoples || 1}
+
+🆔 <b>ID бронирования:</b> #${booking.id.split('-')[0]}
+
+⏳ <i>Ваше бронирование ожидает подтверждения менеджера. Мы свяжемся с вами в ближайшее время!</i>`
+
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) {
+      console.error('Telegram token not configured')
+      return false
+    }
+
+    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: booking.profile.telegram_id,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    })
+
+    if (response.ok) {
+      console.log(`✅ Sent booking confirmation to client: ${booking.profile.telegram_id}`)
+      return true
+    } else {
+      console.error(`❌ Failed to send booking confirmation to client: ${booking.profile.telegram_id}`)
+      return false
+    }
+  } catch (error) {
+    console.error('Error sending booking confirmation to client:', error)
+    return false
+  }
+}
+
+/**
+ * Улучшенное форматирование уведомления о новом бронировании для менеджеров
+ */
+export function formatBookingNotificationEnhanced(booking: any): string {
+  const formattedDate = new Date(booking.start_time).toLocaleDateString('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const formattedEndTime = new Date(booking.end_time).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const duration = Math.round((new Date(booking.end_time).getTime() - new Date(booking.start_time).getTime()) / (1000 * 60 * 60))
+
+  // Получаем телефон из guest_phone или profile.phone
+  const phoneNumber = booking.guest_phone || booking.profile?.phone || 'Не указан'
+
+  // Получаем имя из guest_name или profile.name
+  const clientName = booking.guest_name || booking.profile?.name || 'Не указано'
+
+  // Получаем email если есть профиль
+  const emailPart = booking.profile?.email ? `\n📧 <b>Email:</b> ${booking.profile.email}` : ''
+
+  // Добавляем заметку если есть
+  const notePart = booking.guest_note ? `\n💬 <b>Заметка:</b> ${booking.guest_note}` : ''
+
+  return `🔔 <b>НОВОЕ БРОНИРОВАНИЕ</b>
+
+👤 <b>Клиент:</b> ${clientName}
+📞 <b>Телефон:</b> ${phoneNumber}${emailPart}
+
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+📅 <b>Дата:</b> ${formattedDate}
+⏰ <b>Время:</b> ${new Date(booking.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${formattedEndTime}
+⏱️ <b>Продолжительность:</b> ${duration} ч.
+💰 <b>Стоимость:</b> ${booking.price} ₽
+💵 <b>Предоплата:</b> ${booking.prepayment || 0} ₽
+👥 <b>Количество гостей:</b> ${booking.peoples || 1}${notePart}
+
+🆔 <b>ID:</b> #${booking.id.split('-')[0]}
+
+⚡ <i>Требуется подтверждение</i>`
+}
+
+/**
+ * Отправляет напоминание о предстоящем бронировании
+ */
+export async function sendBookingReminder(booking: any, hoursUntil: number): Promise<boolean> {
+  if (!booking.profile?.telegram_id) {
+    return false
+  }
+
+  const formattedDate = new Date(booking.start_time).toLocaleDateString('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const message = `⏰ <b>Напоминание о бронировании</b>
+
+До вашего бронирования осталось ${hoursUntil} ч.!
+
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+📅 <b>Дата:</b> ${formattedDate}
+👥 <b>Количество гостей:</b> ${booking.peoples || 1}
+
+🆔 <b>ID бронирования:</b> #${booking.id.split('-')[0]}
+
+🎯 <i>Не забудьте подготовиться к поездке!</i>`
+
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) return false
+
+    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: booking.profile.telegram_id,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    })
+
+    return response.ok
+  } catch (error) {
+    console.error('Error sending booking reminder:', error)
+    return false
+  }
+}
