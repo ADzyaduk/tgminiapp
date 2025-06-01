@@ -308,8 +308,6 @@ ${config.description}
 💰 <b>Стоимость:</b> ${booking.price} ₽
 👥 <b>Количество гостей:</b> ${booking.peoples || 1}${managerInfo}
 
-🆔 <b>ID бронирования:</b> #${booking.id.split('-')[0]}
-
 ${status === 'confirmed' ? '🎉 <i>Хорошего отдыха!</i>' : status === 'cancelled' ? '📞 <i>При вопросах обращайтесь к администратору</i>' : '⏰ <i>Мы свяжемся с вами в ближайшее время</i>'}`
 
   try {
@@ -380,8 +378,6 @@ export async function sendClientBookingConfirmation(booking: any): Promise<boole
 💰 <b>Стоимость:</b> ${booking.price} ₽
 👥 <b>Количество гостей:</b> ${booking.peoples || 1}
 
-🆔 <b>ID бронирования:</b> #${booking.id.split('-')[0]}
-
 ⏳ <i>Ваше бронирование ожидает подтверждения менеджера. Мы свяжемся с вами в ближайшее время!</i>`
 
   try {
@@ -447,6 +443,11 @@ export function formatBookingNotificationEnhanced(booking: any): string {
   // Добавляем заметку если есть
   const notePart = booking.guest_note ? `\n💬 <b>Заметка:</b> ${booking.guest_note}` : ''
 
+  // Форматируем ID безопасно - для менеджеров можно показать короткую версию
+  const displayId = typeof booking.id === 'string' && booking.id.includes('-')
+    ? booking.id.split('-')[0]
+    : booking.id
+
   return `🔔 <b>НОВОЕ БРОНИРОВАНИЕ</b>
 
 👤 <b>Клиент:</b> ${clientName}
@@ -460,7 +461,7 @@ export function formatBookingNotificationEnhanced(booking: any): string {
 💵 <b>Предоплата:</b> ${booking.prepayment || 0} ₽
 👥 <b>Количество гостей:</b> ${booking.peoples || 1}${notePart}
 
-🆔 <b>ID:</b> #${booking.id.split('-')[0]}
+🆔 <b>ID:</b> #${displayId}
 
 ⚡ <i>Требуется подтверждение</i>`
 }
@@ -489,8 +490,6 @@ export async function sendBookingReminder(booking: any, hoursUntil: number): Pro
 📅 <b>Дата:</b> ${formattedDate}
 👥 <b>Количество гостей:</b> ${booking.peoples || 1}
 
-🆔 <b>ID бронирования:</b> #${booking.id.split('-')[0]}
-
 🎯 <i>Не забудьте подготовиться к поездке!</i>`
 
   try {
@@ -514,4 +513,121 @@ export async function sendBookingReminder(booking: any, hoursUntil: number): Pro
     console.error('Error sending booking reminder:', error)
     return false
   }
+}
+
+/**
+ * Отправляет уведомление клиенту о подтверждении бронирования групповой поездки
+ */
+export async function sendGroupTripBookingConfirmation(booking: any): Promise<boolean> {
+  // Проверяем наличие Telegram ID у клиента
+  if (!booking.profile?.telegram_id) {
+    console.log('Client has no telegram_id, skipping group trip confirmation')
+    return false
+  }
+
+  const formattedDate = new Date(booking.group_trip.start_time).toLocaleDateString('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const formattedEndTime = new Date(booking.group_trip.end_time).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const totalTickets = booking.adult_count + booking.child_count
+
+  const message = `🚤 <b>Групповая поездка забронирована!</b>
+
+Спасибо за бронирование! Ваши места на групповой поездке подтверждены.
+
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+📅 <b>Дата:</b> ${formattedDate}
+⏰ <b>Время:</b> ${new Date(booking.group_trip.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${formattedEndTime}
+👥 <b>Билеты:</b> ${booking.adult_count} взр. + ${booking.child_count} дет. = ${totalTickets} мест
+💰 <b>Стоимость:</b> ${booking.total_price} ₽
+
+✅ <i>Встретимся в назначенное время! Групповая поездка начнется точно по расписанию.</i>`
+
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) {
+      console.error('Telegram token not configured')
+      return false
+    }
+
+    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: booking.profile.telegram_id,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    })
+
+    if (response.ok) {
+      console.log(`✅ Sent group trip confirmation to client: ${booking.profile.telegram_id}`)
+      return true
+    } else {
+      console.error(`❌ Failed to send group trip confirmation to client: ${booking.profile.telegram_id}`)
+      return false
+    }
+  } catch (error) {
+    console.error('Error sending group trip confirmation to client:', error)
+    return false
+  }
+}
+
+/**
+ * Форматирует уведомление о новом бронировании групповой поездки для менеджеров
+ */
+export function formatGroupTripBookingNotification(booking: any): string {
+  const formattedDate = new Date(booking.group_trip.start_time).toLocaleDateString('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const formattedEndTime = new Date(booking.group_trip.end_time).toLocaleTimeString('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const totalTickets = booking.adult_count + booking.child_count
+
+  // Получаем имя клиента
+  const clientName = booking.guest_name || booking.profile?.name || 'Не указано'
+
+  // Получаем телефон клиента
+  const phoneNumber = booking.guest_phone || booking.profile?.phone || 'Не указан'
+
+  // Получаем email если есть профиль
+  const emailPart = booking.profile?.email ? `\n📧 <b>Email:</b> ${booking.profile.email}` : ''
+
+  // Добавляем заметку если есть
+  const notePart = booking.notes ? `\n💬 <b>Заметка:</b> ${booking.notes}` : ''
+
+  return `🚤 <b>НОВОЕ БРОНИРОВАНИЕ ГРУППОВОЙ ПОЕЗДКИ</b>
+
+👤 <b>Клиент:</b> ${clientName}
+📞 <b>Телефон:</b> ${phoneNumber}${emailPart}
+
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+📅 <b>Дата:</b> ${formattedDate}
+⏰ <b>Время:</b> ${new Date(booking.group_trip.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${formattedEndTime}
+👥 <b>Билеты:</b> ${booking.adult_count} взр. + ${booking.child_count} дет. = ${totalTickets} мест
+💰 <b>Стоимость:</b> ${booking.total_price} ₽${notePart}
+
+🎯 <b>Статус:</b> Подтверждено
+📊 <b>Осталось мест:</b> ${booking.group_trip.available_seats - totalTickets}
+
+✅ <i>Групповая поездка</i>`
 }

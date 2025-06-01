@@ -248,15 +248,11 @@ async function updateStatus(id: string, newStatus: Status) {
   )
 
   try {
-    console.log('🔍 Updating booking status:', { id, newStatus })
-
     // Используем наш API endpoint вместо прямого обращения к Supabase
     const response: any = await $fetch(`/api/bookings/${id}/status`, {
       method: 'PATCH',
       body: { status: newStatus }
     })
-
-    console.log('🔍 API Response:', response)
 
     // Проверяем успешность операции
     if (response && (response.success === true || response.data)) {
@@ -265,11 +261,10 @@ async function updateStatus(id: string, newStatus: Status) {
       // Если API вернул ошибку
       bookings.value = backup
       const errorMessage = response?.error || 'Не удалось обновить статус'
-      console.error('🔍 API Error:', errorMessage)
       toast.error(errorMessage)
     }
   } catch (error: any) {
-    console.error('🔍 Catch Error:', error)
+    console.error('Error updating booking status:', error)
     bookings.value = backup
 
     // Обработка ошибок

@@ -1,10 +1,5 @@
 import { defineEventHandler, readBody, getRouterParam, setResponseStatus } from 'h3'
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
-import {
-  formatStatusNotification,
-  sendAdminNotification,
-  sendClientStatusNotification
-} from '~/server/utils/telegram-notifications'
 
 export default defineEventHandler(async (event) => {
   try {
@@ -28,6 +23,7 @@ export default defineEventHandler(async (event) => {
 
     // Проверяем авторизацию пользователя
     const user = await serverSupabaseUser(event)
+
     if (!user) {
       setResponseStatus(event, 401)
       return { error: 'Unauthorized' }
@@ -37,11 +33,16 @@ export default defineEventHandler(async (event) => {
     const supabase = await serverSupabaseClient(event)
 
     // Получаем текущее бронирование
-    const { data: currentBooking } = await supabase
+    const { data: currentBooking, error: fetchError } = await (supabase as any)
       .from('bookings')
-      .select('*, profile:user_id(*), boat:boat_id(*)')
+      .select('*')
       .eq('id', bookingId)
       .single()
+
+    if (fetchError) {
+      setResponseStatus(event, 500)
+      return { error: 'Error fetching booking', details: fetchError }
+    }
 
     if (!currentBooking) {
       setResponseStatus(event, 404)
@@ -50,50 +51,79 @@ export default defineEventHandler(async (event) => {
 
     // Проверяем права доступа (владелец бронирования, администратор или менеджер лодки)
     const isAdmin = await checkAdminAccess(supabase, user.id)
-    const isManager = await checkManagerAccess(supabase, user.id, (currentBooking as any).boat_id)
+    const isManager = await checkManagerAccess(supabase, user.id, currentBooking.boat_id)
 
-    if ((currentBooking as any).user_id !== user.id && !isAdmin && !isManager) {
+    if (currentBooking.user_id !== user.id && !isAdmin && !isManager) {
       setResponseStatus(event, 403)
       return { error: 'Access denied' }
     }
 
     // Обновляем статус бронирования
-    const { data: updatedBooking, error } = await (supabase as any)
+    const { data: updatedBooking, error: updateError } = await (supabase as any)
       .from('bookings')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update({ status })
       .eq('id', bookingId)
-      .select('*, profile:user_id(*), boat:boat_id(*)')
+      .select('*')
       .single()
 
-    if (error) {
-      console.error('Error updating booking status:', error)
+    if (updateError) {
+      console.error('Error updating booking status:', updateError)
       setResponseStatus(event, 500)
-      return { error: 'Failed to update booking status', details: error }
+      return { error: 'Failed to update booking status', details: updateError }
     }
 
-    // Отправляем уведомления
+    // Получаем дополнительные данные для уведомлений
     if (updatedBooking) {
       try {
+        // Получаем данные профиля клиента
+        let clientProfile = null
+        if (updatedBooking.user_id) {
+          const { data: profile } = await (supabase as any)
+            .from('profiles')
+            .select('*')
+            .eq('id', updatedBooking.user_id)
+            .single()
+          clientProfile = profile
+        }
+
+        // Получаем данные лодки
+        const { data: boat } = await (supabase as any)
+          .from('boats')
+          .select('*')
+          .eq('id', updatedBooking.boat_id)
+          .single()
+
         // Получаем информацию о менеджере, который изменил статус
-        const { data: managerProfile } = await supabase
+        const { data: managerProfile } = await (supabase as any)
           .from('profiles')
           .select('name')
           .eq('id', user.id)
           .single()
 
-        const managerName = (managerProfile as any)?.name || 'Менеджер'
+        const managerName = managerProfile?.name || 'Менеджер'
 
-        // Отправляем улучшенное уведомление клиенту
-        console.log('📱 Sending enhanced status notification to client')
-        await sendClientStatusNotification(updatedBooking, status, managerName)
+        // Создаем объект бронирования с полными данными для уведомлений
+        const bookingWithDetails = {
+          ...updatedBooking,
+          profile: clientProfile,
+          boat: boat
+        }
 
-        // Отправляем уведомление администраторам и менеджерам о смене статуса
-        const notificationMessage = formatStatusNotification(updatedBooking, status)
+        // Отправляем уведомление клиенту (если есть telegram_id)
+        if (clientProfile?.telegram_id) {
+          const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications')
+          await sendClientStatusNotification(bookingWithDetails, status, managerName)
+        }
+
+        // Отправляем уведомление администраторам и менеджерам
+        const { formatStatusNotification, sendAdminNotification } = await import('~/server/utils/telegram-notifications')
+        const notificationMessage = formatStatusNotification(bookingWithDetails, status)
 
         await sendAdminNotification(notificationMessage, {
           parseMode: 'HTML',
-          boatId: (updatedBooking as any).boat_id,
-          bookingId: (updatedBooking as any).id
+          boatId: updatedBooking.boat_id,
+          bookingId: updatedBooking.id,
+          event
         })
 
       } catch (notifyError) {
@@ -119,36 +149,46 @@ export default defineEventHandler(async (event) => {
 
 // Проверка администраторских прав
 async function checkAdminAccess(supabase: any, userId: string): Promise<boolean> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', userId)
-    .single()
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
 
-  return data?.role === 'admin'
+    return data?.role === 'admin'
+  } catch (error) {
+    console.error('Error checking admin access:', error)
+    return false
+  }
 }
 
 // Проверка прав менеджера конкретной лодки
 async function checkManagerAccess(supabase: any, userId: string, boatId: string): Promise<boolean> {
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', userId)
-    .single()
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .single()
 
-  // Если админ - всегда разрешаем
-  if (profile?.role === 'admin') return true
+    // Если админ - всегда разрешаем
+    if (profile?.role === 'admin') return true
 
-  // Если пользователь с ролью manager - разрешаем все
-  if (profile?.role === 'manager') return true
+    // Если пользователь с ролью manager - разрешаем все
+    if (profile?.role === 'manager') return true
 
-  // Для всех остальных ролей проверяем, назначен ли пользователь менеджером этой лодки
-  const { data: boatManager, error } = await supabase
-    .from('boat_managers')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('boat_id', boatId)
-    .single()
+    // Для всех остальных ролей проверяем, назначен ли пользователь менеджером этой лодки
+    const { data: boatManager, error } = await supabase
+      .from('boat_managers')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('boat_id', boatId)
+      .single()
 
-  return !!boatManager
+    return !!boatManager
+  } catch (error) {
+    console.error('Error checking manager access:', error)
+    return false
+  }
 }

@@ -6,20 +6,17 @@
           <h3 class="text-lg font-medium">Бронирование групповой поездки</h3>
         </div>
       </template>
-      
+
       <div class="p-4 space-y-4">
         <!-- Information about the group trip -->
         <div class="p-4 rounded-lg mb-4">
           <div class="flex items-center gap-4">
             <!-- Boat image -->
             <div class="w-20 h-20 flex-shrink-0">
-              <img 
-                :src="getBoatImage(trip.boat)" 
-                :alt="trip.boat?.name || 'Лодка'"
-                class="w-full h-full object-cover rounded-md"
-              />
+              <img :src="getBoatImage(trip.boat)" :alt="trip.boat?.name || 'Лодка'"
+                class="w-full h-full object-cover rounded-md" />
             </div>
-            
+
             <div>
               <h4 class="font-medium text-lg mb-1">
                 Групповая поездка
@@ -27,13 +24,13 @@
                   на лодке "{{ trip.boat.name }}"
                 </span>
               </h4>
-              
+
               <UBadge color="success" variant="subtle">
                 осталось {{ trip.available_seats }} мест
               </UBadge>
             </div>
           </div>
-          
+
           <div class="mt-3 grid grid-cols-2 gap-3">
             <div>
               <span class="text-sm text-gray-500">Цена за взрослого:</span>
@@ -44,77 +41,60 @@
               <div class="font-medium">{{ formatPrice(trip.child_price) }}</div>
             </div>
           </div>
-          
+
           <div v-if="trip.description" class="mt-3 text-sm">
             {{ trip.description }}
           </div>
         </div>
-        
+
         <!-- Booking form -->
         <div class="space-y-4">
           <UFormField label="Имя гостя" required>
             <UInput v-model="form.guestName" placeholder="Введите имя" />
           </UFormField>
-          
+
           <UFormField label="Телефон гостя">
             <UInput v-model="form.guestPhone" placeholder="+7 (___) ___-__-__" />
           </UFormField>
-          
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <UFormField label="Количество взрослых" required>
-              <UInput
-                v-model="form.adultCount"
-                type="number"
-                min="0"
-                :max="trip.available_seats"
-                @change="calculateTotalPrice"
-              />
+              <UInput v-model="form.adultCount" type="number" min="0" :max="trip.available_seats"
+                @change="calculateTotalPrice" />
             </UFormField>
-            
+
             <UFormField label="Количество детей" required>
-              <UInput
-                v-model="form.childCount"
-                type="number"
-                min="0"
-                :max="trip.available_seats - form.adultCount"
-                @change="calculateTotalPrice"
-              />
+              <UInput v-model="form.childCount" type="number" min="0" :max="trip.available_seats - form.adultCount"
+                @change="calculateTotalPrice" />
             </UFormField>
           </div>
-          
+
           <UFormField label="Примечания">
             <UTextarea v-model="form.notes" placeholder="Дополнительная информация" />
           </UFormField>
-          
+
           <div class="p-4 rounded-lg">
             <div class="flex justify-between items-center">
               <span class="font-medium">Итого:</span>
               <span class="text-lg font-bold">{{ formatPrice(form.totalPrice) }}</span>
             </div>
             <div class="text-sm text-gray-500 mt-1">
-              {{ form.adultCount }} взр. × {{ formatPrice(trip.adult_price) }} + {{ form.childCount }} дет. × {{ formatPrice(trip.child_price) }}
+              {{ form.adultCount }} взр. × {{ formatPrice(trip.adult_price) }} + {{ form.childCount }} дет. × {{
+                formatPrice(trip.child_price) }}
             </div>
           </div>
         </div>
       </div>
-      
+
       <template #footer>
         <div class="flex justify-between">
           <p v-if="errorMessage" class="text-red-500 text-sm">{{ errorMessage }}</p>
           <div class="flex gap-2 ml-auto">
-            <UButton
-              color="gray"
-              variant="soft"
-              @click="$emit('cancel')"
-            >
+            <UButton color="gray" variant="soft" @click="$emit('cancel')">
               Отмена
             </UButton>
-            <UButton
-              color="primary"
-              :loading="isSaving"
-              :disabled="isFormInvalid || trip.available_seats <= 0"
-              @click="submitBooking"
-            >
+            <UButton color="primary" :loading="isSaving" :disabled="isFormInvalid || trip.available_seats <= 0"
+              @click="submitBooking">
               Забронировать
             </UButton>
           </div>
@@ -167,7 +147,7 @@ const calculateTotalPrice = () => {
 
 // Computed property for form validation
 const isFormInvalid = computed(() => {
-  return !form.value.guestName || 
+  return !form.value.guestName ||
     (form.value.adultCount === 0 && form.value.childCount === 0) ||
     (form.value.adultCount + form.value.childCount) > props.trip.available_seats
 })
@@ -213,17 +193,17 @@ const submitBooking = async () => {
     errorMessage.value = 'Пожалуйста, заполните все необходимые поля'
     return
   }
-  
+
   // Check if there are enough seats available
   if ((form.value.adultCount + form.value.childCount) > props.trip.available_seats) {
     errorMessage.value = 'Недостаточно свободных мест для бронирования'
     return
   }
-  
+
   try {
     isSaving.value = true
     errorMessage.value = ''
-    
+
     // Prepare booking data
     const bookingData = {
       group_trip_id: props.trip.id,
@@ -232,35 +212,49 @@ const submitBooking = async () => {
       adult_count: parseInt(form.value.adultCount),
       child_count: parseInt(form.value.childCount),
       total_price: form.value.totalPrice,
-      notes: form.value.notes,
-      status: 'confirmed'
+      notes: form.value.notes
     }
-    
-    // Submit to Supabase
-    const { data, error } = await supabaseClient
-      .from('group_trip_bookings')
-      .insert(bookingData)
-      .select()
-    
-    if (error) throw error
-    
-    // Update available seats in the Pinia store
-    const newAvailableSeats = props.trip.available_seats - (form.value.adultCount + form.value.childCount)
-    await groupTripsStore.updateTripSeats(props.trip.id, newAvailableSeats)
-    
-    toast.add({
-      title: 'Успешно',
-      description: 'Бронирование создано',
-      color: 'success'
+
+    // Используем API endpoint вместо прямого обращения к Supabase
+    // Это обеспечит отправку уведомлений
+    const response: any = await $fetch('/api/group-trip-bookings', {
+      method: 'POST',
+      body: bookingData
     })
-    
-    emit('success', data?.[0])
-  } catch (error) {
+
+    if (response && response.success) {
+      // Update available seats in the Pinia store
+      const newAvailableSeats = props.trip.available_seats - (form.value.adultCount + form.value.childCount)
+      await groupTripsStore.updateTripSeats(props.trip.id, newAvailableSeats)
+
+      toast.add({
+        title: 'Успешно',
+        description: 'Бронирование создано. Уведомления отправлены!',
+        color: 'success'
+      })
+
+      emit('success', response.data)
+    } else {
+      const errorMessage = response?.error || 'Не удалось создать бронирование'
+      throw new Error(errorMessage)
+    }
+  } catch (error: any) {
     console.error('Error creating booking:', error)
-    errorMessage.value = 'Не удалось создать бронирование. Попробуйте еще раз.'
+
+    let errorMsg = 'Не удалось создать бронирование. Попробуйте еще раз.'
+
+    if (error.data?.error) {
+      errorMsg = error.data.error
+    } else if (error.statusCode === 400) {
+      errorMsg = 'Недостаточно свободных мест'
+    } else if (error.statusCode === 404) {
+      errorMsg = 'Поездка не найдена'
+    }
+
+    errorMessage.value = errorMsg
     toast.add({
       title: 'Ошибка',
-      description: 'Не удалось создать бронирование',
+      description: errorMsg,
       color: 'error'
     })
   } finally {
@@ -272,4 +266,4 @@ const submitBooking = async () => {
 onMounted(() => {
   calculateTotalPrice()
 })
-</script> 
+</script>
