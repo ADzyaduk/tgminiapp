@@ -243,38 +243,49 @@ const cancelledBookings = computed(() => {
 // Оптимистичное обновление статуса
 async function updateStatus(id: string, newStatus: Status) {
   const backup = bookings.value.slice()
-  bookings.value = bookings.value.map((b: Booking) =>
+  bookings.value = bookings.value.map((b: any) =>
     b.id === id ? { ...b, status: newStatus } : b
   )
 
   try {
+    console.log('🔍 Updating booking status:', { id, newStatus })
+
     // Используем наш API endpoint вместо прямого обращения к Supabase
-    // Это обеспечит отправку уведомлений через систему телеграм
-    const response = await $fetch(`/api/bookings/${id}/status`, {
+    const response: any = await $fetch(`/api/bookings/${id}/status`, {
       method: 'PATCH',
       body: { status: newStatus }
     })
 
-    if (response.status !== 200) {
-      bookings.value = backup
-      toast.error('Не удалось обновить статус')
-    } else {
+    console.log('🔍 API Response:', response)
+
+    // Проверяем успешность операции
+    if (response && (response.success === true || response.data)) {
       toast.success('Статус обновлён. Уведомления отправлены!')
+    } else {
+      // Если API вернул ошибку
+      bookings.value = backup
+      const errorMessage = response?.error || 'Не удалось обновить статус'
+      console.error('🔍 API Error:', errorMessage)
+      toast.error(errorMessage)
     }
   } catch (error: any) {
-    console.error('Error updating booking status:', error)
+    console.error('🔍 Catch Error:', error)
     bookings.value = backup
 
-    // Более детальная обработка ошибок
-    if (error.status === 401) {
-      toast.error('Доступ запрещен')
-    } else if (error.status === 403) {
-      toast.error('У вас нет прав для изменения этого бронирования')
-    } else if (error.status === 404) {
-      toast.error('Бронирование не найдено')
-    } else {
-      toast.error('Ошибка обновления статуса')
+    // Обработка ошибок
+    let errorMessage = 'Ошибка обновления статуса'
+
+    if (error.data?.error) {
+      errorMessage = error.data.error
+    } else if (error.statusCode === 401) {
+      errorMessage = 'Доступ запрещен'
+    } else if (error.statusCode === 403) {
+      errorMessage = 'У вас нет прав для изменения этого бронирования'
+    } else if (error.statusCode === 404) {
+      errorMessage = 'Бронирование не найдено'
     }
+
+    toast.error(errorMessage)
   }
 }
 

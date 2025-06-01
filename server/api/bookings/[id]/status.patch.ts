@@ -1,4 +1,4 @@
-import { defineEventHandler, readBody, getRouterParam } from 'h3'
+import { defineEventHandler, readBody, getRouterParam, setResponseStatus } from 'h3'
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 import {
   formatStatusNotification,
@@ -12,10 +12,8 @@ export default defineEventHandler(async (event) => {
     const bookingId = getRouterParam(event, 'id')
 
     if (!bookingId) {
-      return {
-        status: 400,
-        body: { error: 'Booking ID is required' }
-      }
+      setResponseStatus(event, 400)
+      return { error: 'Booking ID is required' }
     }
 
     // Получаем новый статус из запроса
@@ -24,19 +22,15 @@ export default defineEventHandler(async (event) => {
     // Проверяем валидность статуса
     const validStatuses = ['pending', 'confirmed', 'cancelled']
     if (!validStatuses.includes(status)) {
-      return {
-        status: 400,
-        body: { error: 'Invalid status. Valid values: pending, confirmed, cancelled' }
-      }
+      setResponseStatus(event, 400)
+      return { error: 'Invalid status. Valid values: pending, confirmed, cancelled' }
     }
 
     // Проверяем авторизацию пользователя
     const user = await serverSupabaseUser(event)
     if (!user) {
-      return {
-        status: 401,
-        body: { error: 'Unauthorized' }
-      }
+      setResponseStatus(event, 401)
+      return { error: 'Unauthorized' }
     }
 
     // Подключаемся к Supabase
@@ -50,10 +44,8 @@ export default defineEventHandler(async (event) => {
       .single()
 
     if (!currentBooking) {
-      return {
-        status: 404,
-        body: { error: 'Booking not found' }
-      }
+      setResponseStatus(event, 404)
+      return { error: 'Booking not found' }
     }
 
     // Проверяем права доступа (владелец бронирования, администратор или менеджер лодки)
@@ -61,10 +53,8 @@ export default defineEventHandler(async (event) => {
     const isManager = await checkManagerAccess(supabase, user.id, (currentBooking as any).boat_id)
 
     if ((currentBooking as any).user_id !== user.id && !isAdmin && !isManager) {
-      return {
-        status: 403,
-        body: { error: 'Access denied' }
-      }
+      setResponseStatus(event, 403)
+      return { error: 'Access denied' }
     }
 
     // Обновляем статус бронирования
@@ -77,10 +67,8 @@ export default defineEventHandler(async (event) => {
 
     if (error) {
       console.error('Error updating booking status:', error)
-      return {
-        status: 500,
-        body: { error: 'Failed to update booking status' }
-      }
+      setResponseStatus(event, 500)
+      return { error: 'Failed to update booking status', details: error }
     }
 
     // Отправляем уведомления
@@ -110,19 +98,22 @@ export default defineEventHandler(async (event) => {
 
       } catch (notifyError) {
         console.error('Failed to send notifications:', notifyError)
+        // Не падаем, если уведомления не отправились
       }
     }
 
+    // Возвращаем успешный результат
+    setResponseStatus(event, 200)
     return {
-      status: 200,
-      body: updatedBooking
+      success: true,
+      data: updatedBooking,
+      message: 'Booking status updated successfully'
     }
+
   } catch (error) {
     console.error('Error in updating booking status:', error)
-    return {
-      status: 500,
-      body: { error: 'Internal server error' }
-    }
+    setResponseStatus(event, 500)
+    return { error: 'Internal server error', details: error }
   }
 })
 
