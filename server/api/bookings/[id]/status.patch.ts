@@ -123,6 +123,7 @@ export default defineEventHandler(async (event) => {
           parseMode: 'HTML',
           boatId: updatedBooking.boat_id,
           bookingId: updatedBooking.id,
+          bookingType: 'regular',
           event
         })
 

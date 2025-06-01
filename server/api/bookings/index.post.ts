@@ -43,45 +43,27 @@ export default defineEventHandler(async (event) => {
     }
 
     // Отправляем уведомления
-    if (booking) {
-      try {
-        console.log('📧 Starting notification process for booking:', (booking as any).id)
+    try {
+      console.log('📧 Starting notification process for booking:', (booking as any).id)
 
-        // Формируем улучшенный текст уведомления для менеджеров
-        const notificationMessage = formatBookingNotificationEnhanced(booking)
-        console.log('📝 Enhanced notification message formatted')
+      // Отправляем улучшенное уведомление менеджерам
+      const enhancedMessage = formatBookingNotificationEnhanced(booking)
 
-        // Отправляем уведомление менеджерам с кнопками для подтверждения/отмены
-        console.log('🚀 Calling sendAdminNotification with:', {
-          boatId: (booking as any).boat_id,
-          bookingId: (booking as any).id,
-          hasEvent: !!event
-        })
+      await sendAdminNotification(enhancedMessage, {
+        parseMode: 'HTML',
+        boatId: (booking as any).boat_id,
+        bookingId: (booking as any).id,
+        bookingType: 'regular',
+        event
+      })
 
-        const notificationResult = await sendAdminNotification(notificationMessage, {
-          parseMode: 'HTML',
-          boatId: (booking as any).boat_id as string,
-          bookingId: (booking as any).id as string,
-          event
-        })
-
-        console.log('✅ Manager notification result:', notificationResult)
-
-        // Отправляем подтверждение клиенту, если у него есть Telegram ID
-        if ((booking as any).profile?.telegram_id) {
-          console.log('📱 Sending booking confirmation to client:', (booking as any).profile.telegram_id)
-
-          const clientNotificationResult = await sendClientBookingConfirmation(booking)
-          console.log('✅ Client confirmation result:', clientNotificationResult)
-        } else {
-          console.log('ℹ️ Client has no telegram_id, skipping client confirmation')
-        }
-      } catch (notifyError) {
-        // Логируем ошибку, но не влияем на основной ответ API
-        console.error('❌ Failed to send notifications:', notifyError)
+      // Отправляем подтверждение клиенту (если есть telegram_id)
+      if ((booking as any).profile?.telegram_id) {
+        await sendClientBookingConfirmation(booking)
       }
-    } else {
-      console.log('⚠️ No booking created, skipping notifications')
+
+    } catch (notifyError) {
+      console.error('Failed to send notifications:', notifyError)
     }
 
     return {

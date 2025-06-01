@@ -76,10 +76,11 @@ export async function sendAdminNotification(
     parseMode?: 'HTML' | 'Markdown',
     boatId?: string,
     bookingId?: string,
+    bookingType?: 'regular' | 'group_trip',
     event?: H3Event
   } = {}
 ): Promise<boolean> {
-  const { parseMode = 'HTML', boatId, bookingId, event } = options
+  const { parseMode = 'HTML', boatId, bookingId, bookingType = 'regular', event } = options
 
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
@@ -90,6 +91,25 @@ export async function sendAdminNotification(
     }
 
     const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+    // Создаем инлайн кнопки для бронирований
+    let replyMarkup = undefined
+    if (bookingId && bookingType) {
+      replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: '✅ Подтвердить',
+              callback_data: `confirm_${bookingType}_${bookingId}`
+            },
+            {
+              text: '❌ Отменить',
+              callback_data: `cancel_${bookingType}_${bookingId}`
+            }
+          ]
+        ]
+      }
+    }
 
     // Сначала пытаемся отправить менеджерам лодки, если указан boatId
     let sentToManagers = false
@@ -112,18 +132,24 @@ export async function sendAdminNotification(
             .not('telegram_id', 'is', null)
 
           if (profiles && profiles.length > 0) {
-            // Отправляем уведомление каждому менеджеру (без кнопок)
+            // Отправляем уведомление каждому менеджеру с кнопками
             const results = await Promise.all(
               profiles.map(async (profile: any) => {
                 try {
+                  const body: any = {
+                    chat_id: profile.telegram_id,
+                    text: message,
+                    parse_mode: parseMode
+                  }
+
+                  if (replyMarkup) {
+                    body.reply_markup = replyMarkup
+                  }
+
                   const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      chat_id: profile.telegram_id,
-                      text: message,
-                      parse_mode: parseMode
-                    })
+                    body: JSON.stringify(body)
                   })
 
                   return response.ok
@@ -149,14 +175,20 @@ export async function sendAdminNotification(
 
       console.log(`Sending notification to admin chat ID: ${adminChatId}`)
 
+      const body: any = {
+        chat_id: adminChatId,
+        text: message,
+        parse_mode: parseMode
+      }
+
+      if (replyMarkup) {
+        body.reply_markup = replyMarkup
+      }
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: adminChatId,
-          text: message,
-          parse_mode: parseMode
-        })
+        body: JSON.stringify(body)
       })
 
       const result = response.ok
