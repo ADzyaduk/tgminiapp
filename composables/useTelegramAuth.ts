@@ -273,6 +273,74 @@ export const useTelegramAuth = () => {
     }
   }
 
+  // Запрос номера телефона через Telegram WebApp API
+  const requestTelegramContact = async (): Promise<{ success: boolean; phone?: string; error?: string }> => {
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !window.Telegram?.WebApp) {
+        resolve({ success: false, error: 'Telegram WebApp not available' })
+        return
+      }
+
+      const tg = window.Telegram.WebApp as any
+
+      // Проверяем поддерживается ли запрос контакта
+      if (!tg.requestContact) {
+        resolve({ success: false, error: 'Contact request not supported' })
+        return
+      }
+
+      try {
+        console.log('📞 Requesting contact from Telegram...')
+
+        // Устанавливаем обработчик события
+        const handleContactReceived = (event: any) => {
+          console.log('📞 Contact received:', event)
+
+          if (event?.contact?.phone_number) {
+            // Форматируем номер (добавляем + если нет)
+            let phone = event.contact.phone_number
+            if (!phone.startsWith('+')) {
+              phone = '+' + phone
+            }
+
+            resolve({ success: true, phone })
+          } else {
+            resolve({ success: false, error: 'No phone number in contact' })
+          }
+
+          // Убираем обработчик после получения
+          tg.offEvent('contactRequested', handleContactReceived)
+        }
+
+        // Обработчик для отказа пользователя
+        const handleContactCancelled = () => {
+          console.log('📞 Contact request cancelled by user')
+          resolve({ success: false, error: 'User cancelled contact sharing' })
+          tg.offEvent('contactRequested', handleContactReceived)
+          tg.offEvent('contactCancelled', handleContactCancelled)
+        }
+
+        // Устанавливаем обработчики
+        tg.onEvent('contactRequested', handleContactReceived)
+        tg.onEvent('contactCancelled', handleContactCancelled)
+
+        // Запрашиваем контакт
+        tg.requestContact()
+
+        // Таймаут на случай если ничего не произойдет
+        setTimeout(() => {
+          resolve({ success: false, error: 'Contact request timeout' })
+          tg.offEvent('contactRequested', handleContactReceived)
+          tg.offEvent('contactCancelled', handleContactCancelled)
+        }, 30000) // 30 секунд
+
+      } catch (error: any) {
+        console.error('❌ Error requesting contact:', error)
+        resolve({ success: false, error: error.message })
+      }
+    })
+  }
+
   return {
     // Состояние
     telegramUser: readonly(telegramUser),
@@ -290,6 +358,7 @@ export const useTelegramAuth = () => {
     checkAuth,
     initAuth,
     updatePhone,
+    requestTelegramContact,
     getTelegramInitData,
     parseInitData
   }

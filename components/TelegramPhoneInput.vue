@@ -15,6 +15,12 @@
                         autocomplete="tel" maxlength="18" @input="formatPhone" />
                 </UFormField>
 
+                <!-- Кнопка автоматического получения номера -->
+                <UButton type="button" variant="soft" color="info" block @click="requestContactFromTelegram"
+                    :loading="requestingContact" :disabled="loading">
+                    📱 Получить автоматически из Telegram
+                </UButton>
+
                 <UButton type="submit" block :loading="loading" :disabled="loading || !isValidPhone">
                     Сохранить номер
                 </UButton>
@@ -49,6 +55,7 @@ const toast = useToast()
 const phone = ref('')
 const loading = ref(false)
 const error = ref('')
+const requestingContact = ref(false)
 
 // Валидация номера телефона
 const isValidPhone = computed(() => {
@@ -139,4 +146,38 @@ watch(() => props.showPhoneInput, (show) => {
         })
     }
 })
+
+// Запрос контакта из Telegram WebApp API
+const requestContactFromTelegram = async () => {
+    requestingContact.value = true
+    try {
+        const { requestTelegramContact } = useTelegramAuth()
+        const result = await requestTelegramContact()
+
+        if (result.success && result.phone) {
+            phone.value = result.phone
+            toast.add({
+                title: 'Успешно!',
+                description: 'Номер телефона получен автоматически',
+                color: 'success'
+            })
+        } else {
+            error.value = result.error || 'Ошибка получения номера'
+            toast.add({
+                title: 'Ошибка',
+                description: error.value,
+                color: 'error'
+            })
+        }
+    } catch (err: any) {
+        error.value = 'Произошла ошибка при получении номера'
+        toast.add({
+            title: 'Ошибка',
+            description: error.value,
+            color: 'error'
+        })
+    } finally {
+        requestingContact.value = false
+    }
+}
 </script>
