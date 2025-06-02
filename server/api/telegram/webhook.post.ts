@@ -1,5 +1,5 @@
 import { defineEventHandler, readBody, setResponseStatus } from 'h3'
-import { serverSupabaseClient } from '#supabase/server'
+import { serverSupabaseServiceRole } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
   try {
@@ -23,7 +23,9 @@ export default defineEventHandler(async (event) => {
         return { ok: true }
       }
 
-      const supabase = await serverSupabaseClient(event)
+      console.log('🔍 Parsed callback:', { action, bookingType, bookingId })
+
+      const supabase = serverSupabaseServiceRole(event)
 
       // Проверяем, что пользователь - администратор или менеджер для команд управления бронированиями
       const { data: adminUser } = await supabase
@@ -32,6 +34,8 @@ export default defineEventHandler(async (event) => {
         .eq('telegram_id', from.id.toString())
         .in('role', ['admin', 'manager'])
         .single()
+
+      console.log('👤 Admin user check:', adminUser)
 
       if (!adminUser) {
         // Отправляем сообщение о том, что у пользователя нет прав
@@ -45,26 +49,35 @@ export default defineEventHandler(async (event) => {
 
       // Получаем информацию о бронировании для проверки прав на лодку
       let booking: any = null
+      console.log('🔍 Looking for booking:', { bookingType, bookingId })
+
       if (bookingType === 'regular') {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('bookings')
-          .select('boat_id')
+          .select('boat_id, id, guest_name, start_time')
           .eq('id', bookingId)
           .single()
+
+        console.log('📊 Regular booking query result:', { data, error })
         booking = data
       } else if (bookingType === 'group_trip') {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('group_trip_bookings')
-          .select('group_trip:group_trips(boat_id)')
+          .select('id, guest_name, group_trip:group_trips(boat_id)')
           .eq('id', bookingId)
           .single()
+
+        console.log('📊 Group trip booking query result:', { data, error })
         booking = data ? { boat_id: (data as any).group_trip?.boat_id } : null
       }
 
       if (!booking) {
+        console.log('❌ Booking not found:', { bookingType, bookingId })
         await sendTelegramMessage(chatId, '❌ Бронирование не найдено', messageId)
         return { ok: true }
       }
+
+      console.log('✅ Booking found:', booking)
 
       // Проверяем права на управление этой лодкой для всех пользователей (не только с ролью manager)
       if ((adminUser as any).role !== 'admin') {
@@ -74,6 +87,8 @@ export default defineEventHandler(async (event) => {
           .eq('user_id', (adminUser as any).id)
           .eq('boat_id', booking.boat_id)
           .single()
+
+        console.log('🔑 Manager access check:', managerAccess)
 
         if (!managerAccess) {
           await sendTelegramMessage(
@@ -110,34 +125,49 @@ async function handleRegularBookingAction(
   updatedBy: string
 ) {
   try {
+    console.log('🎯 handleRegularBookingAction called:', { action, bookingId, updatedBy })
+
     const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled'
 
     // Получаем текущее бронирование
+    console.log('🔍 Fetching booking details...')
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
       .select('*, profile:user_id(*), boat:boat_id(*)')
       .eq('id', bookingId)
       .single()
 
+    console.log('📊 Booking fetch result:', { booking: booking?.id, error: fetchError })
+
     if (fetchError || !booking) {
+      console.log('❌ Booking not found in handleRegularBookingAction:', fetchError)
       await sendTelegramMessage(chatId, '❌ Бронирование не найдено', messageId)
       return
     }
 
+    console.log('✅ Booking details:', {
+      id: booking.id,
+      guest_name: booking.guest_name,
+      boat_name: booking.boat?.name,
+      current_status: booking.status
+    })
+
     // Обновляем статус
+    console.log('⚡ Updating booking status to:', newStatus)
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-        updated_by: updatedBy
+        status: newStatus
       })
       .eq('id', bookingId)
 
     if (updateError) {
+      console.log('❌ Error updating booking status:', updateError)
       await sendTelegramMessage(chatId, '❌ Ошибка обновления статуса', messageId)
       return
     }
+
+    console.log('✅ Booking status updated successfully')
 
     // Получаем полные данные для уведомления клиенту
     const { data: fullBooking } = await supabase
@@ -148,6 +178,7 @@ async function handleRegularBookingAction(
 
     // Отправляем уведомление клиенту
     if (fullBooking?.profile?.telegram_id) {
+      console.log('📱 Sending client notification...')
       const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications')
       await sendClientStatusNotification(fullBooking, newStatus, 'Менеджер')
     }
@@ -155,14 +186,18 @@ async function handleRegularBookingAction(
     // Обновляем сообщение в Telegram
     const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
     const emoji = action === 'confirm' ? '✅' : '❌'
+
+    console.log('💬 Sending confirmation message to manager...')
     await sendTelegramMessage(
       chatId,
       `${emoji} Бронирование ${statusText} для клиента ${booking.profile?.name || 'Нет имени'} на ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
       messageId
     )
 
+    console.log('✅ handleRegularBookingAction completed successfully')
+
   } catch (error) {
-    console.error('Error handling regular booking action:', error)
+    console.error('❌ Error in handleRegularBookingAction:', error)
     await sendTelegramMessage(chatId, '❌ Произошла ошибка', messageId)
   }
 }
