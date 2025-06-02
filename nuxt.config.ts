@@ -13,6 +13,18 @@ export default defineNuxtConfig({
   // Стили
   css: ['~/assets/css/main.css'],
 
+  // Head настройки - добавляем Telegram WebApp скрипт
+  app: {
+    head: {
+      script: [
+        {
+          src: 'https://telegram.org/js/telegram-web-app.js',
+          defer: true
+        }
+      ]
+    }
+  },
+
   // Настройки Supabase - упрощенная конфигурация
   supabase: {
     redirect: false,

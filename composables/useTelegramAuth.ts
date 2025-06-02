@@ -73,12 +73,28 @@ export const useTelegramAuth = () => {
 
     // В production используем Telegram WebApp API
     if (window.Telegram?.WebApp?.initData) {
+      console.log('✅ Using Telegram WebApp initData')
       return window.Telegram.WebApp.initData
+    }
+
+    // Проверяем есть ли объект Telegram но нет initData
+    if (window.Telegram?.WebApp && !window.Telegram.WebApp.initData) {
+      console.warn('⚠️ Telegram WebApp found but initData is empty')
+      console.warn('   This usually means the page was opened outside of Telegram')
+      console.warn('   Please open this page through your Telegram bot')
+    }
+
+    // Проверяем есть ли объект Telegram вообще
+    if (!window.Telegram) {
+      console.error('❌ Telegram object not found')
+      console.error('   Make sure telegram-web-app.js script is loaded')
+      console.error('   Check if the script is added to nuxt.config.ts')
     }
 
     // В development режиме возвращаем фейковые данные
     const config = useRuntimeConfig()
     if (config.public.isTelegramDevMode) {
+      console.log('🔧 Using development mode fake data')
       return 'query_id=dev&user=%7B%22id%22%3A123456789%2C%22first_name%22%3A%22Dev%22%2C%22last_name%22%3A%22User%22%2C%22username%22%3A%22devuser%22%7D&auth_date=1234567890&hash=fake_hash_for_dev'
     }
 
