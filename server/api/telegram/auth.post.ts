@@ -1,6 +1,6 @@
 import { defineEventHandler, readBody, setCookie, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
-import * as jwt from 'jsonwebtoken'
+import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 
 interface TelegramUser {
@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
     const isDev = config.public.isTelegramDevMode
 
     if (!isDev) {
-      const isValid = validateInitData(initData, config.public.telegramBotToken)
+      const isValid = validateInitData(initData, config.telegramBotToken)
       if (!isValid) {
         setResponseStatus(event, 401)
         return { success: false, error: 'Invalid initData signature' }
@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // Генерируем JWT токены
-    const tokens = generateTokens(user)
+    const tokens = generateTokens(user, config)
 
     // Устанавливаем токены в cookies
     setCookies(event, tokens)
@@ -155,8 +155,7 @@ async function findOrCreateUser(supabase: any, telegramUser: TelegramUser) {
       const { data: updatedUser } = await supabase
         .from('profiles')
         .update({
-          name: `${telegramUser.first_name || ''} ${telegramUser.last_name || ''}`.trim() || telegramUser.username || 'Telegram User',
-          updated_at: new Date().toISOString()
+          name: `${telegramUser.first_name || ''} ${telegramUser.last_name || ''}`.trim() || telegramUser.username || 'Telegram User'
         })
         .eq('telegram_id', telegramUser.id.toString())
         .select('*')
@@ -194,9 +193,9 @@ async function findOrCreateUser(supabase: any, telegramUser: TelegramUser) {
 }
 
 // Генерация JWT токенов
-function generateTokens(user: any) {
-  const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-here'
-  const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-here'
+function generateTokens(user: any, config: any) {
+  const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
+  const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
 
   const accessToken = jwt.sign(
     {
@@ -225,6 +224,7 @@ function generateTokens(user: any) {
 
 // Установка cookies
 function setCookies(event: any, tokens: { accessToken: string; refreshToken: string }) {
+  const config = useRuntimeConfig()
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

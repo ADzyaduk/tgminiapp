@@ -1,4 +1,4 @@
-import { defineEventHandler, readBody, getCookie, setResponseStatus } from 'h3'
+import { defineEventHandler, getCookie, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import jwt from 'jsonwebtoken'
 
@@ -7,21 +7,11 @@ interface JWTPayload {
   telegram_id: string
   role: string
   type: string
-  iat?: number
-  exp?: number
 }
 
 export default defineEventHandler(async (event) => {
   try {
-    const body = await readBody(event)
-    const { phone } = body
-
-    if (!phone) {
-      setResponseStatus(event, 400)
-      return { success: false, error: 'Phone number is required' }
-    }
-
-    // Получаем access token из cookies
+    // Проверяем JWT токен
     const accessToken = getCookie(event, 'tg-access-token')
 
     if (!accessToken) {
@@ -29,11 +19,10 @@ export default defineEventHandler(async (event) => {
       return { success: false, error: 'Authentication required' }
     }
 
-    // Проверяем токен
     const config = useRuntimeConfig()
     const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-    let tokenPayload: JWTPayload
 
+    let tokenPayload: JWTPayload
     try {
       tokenPayload = jwt.verify(accessToken, jwtSecret) as JWTPayload
     } catch (error) {
@@ -41,33 +30,38 @@ export default defineEventHandler(async (event) => {
       return { success: false, error: 'Invalid token' }
     }
 
-    // Обновляем номер телефона в базе данных
+    // Проверяем права админа
     const supabase = serverSupabaseServiceRole(event)
-    const { data: updatedUser, error } = await (supabase as any)
+    const { data: adminUser } = await (supabase as any)
       .from('profiles')
-      .update({
-        phone
-      })
+      .select('role')
       .eq('id', tokenPayload.id)
-      .select('*')
       .single()
 
-    if (error) {
-      console.error('❌ Error updating phone:', error)
-      setResponseStatus(event, 500)
-      return { success: false, error: 'Failed to update phone number' }
+    if (!adminUser || adminUser.role !== 'admin') {
+      setResponseStatus(event, 403)
+      return { success: false, error: 'Admin access required' }
     }
 
-    console.log('✅ Phone updated successfully for user:', tokenPayload.telegram_id)
+    // Получаем всех пользователей
+    const { data: users, error } = await (supabase as any)
+      .from('profiles')
+      .select('id, name, email, telegram_id, phone, role')
+      .order('name')
+
+    if (error) {
+      console.error('Error fetching users:', error)
+      setResponseStatus(event, 500)
+      return { success: false, error: 'Failed to fetch users' }
+    }
 
     return {
       success: true,
-      message: 'Phone number updated successfully',
-      user: updatedUser
+      data: users || []
     }
 
   } catch (error: any) {
-    console.error('❌ Update phone error:', error)
+    console.error('Admin users API error:', error)
     setResponseStatus(event, 500)
     return { success: false, error: 'Internal server error' }
   }

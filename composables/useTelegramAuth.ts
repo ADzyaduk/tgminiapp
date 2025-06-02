@@ -125,6 +125,9 @@ export const useTelegramAuth = () => {
       // Отправляем initData на сервер для валидации
       const response = await $fetch<TelegramAuthApiResponse>('/api/telegram/auth', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: { initData }
       })
 
@@ -166,7 +169,10 @@ export const useTelegramAuth = () => {
     try {
       // Очищаем JWT cookies на сервере
       await $fetch('/api/telegram/logout', {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       })
 
       // Очищаем локальное состояние
@@ -229,6 +235,9 @@ export const useTelegramAuth = () => {
     try {
       const response = await $fetch<PhoneUpdateResponse>('/api/telegram/update-phone', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: { phone }
       })
 

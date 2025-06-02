@@ -36,6 +36,7 @@ export default defineNuxtConfig({
     // Серверные секреты
     jwtSecret: process.env.JWT_SECRET,
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
 
     public: {
       supabaseUrl: process.env.SUPABASE_URL,

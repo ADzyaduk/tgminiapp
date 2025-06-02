@@ -88,6 +88,9 @@
                                 <p v-if="profile?.phone" class="text-sm text-green-700">
                                     Телефон: {{ profile.phone }}
                                 </p>
+                                <p class="text-sm text-green-700">
+                                    Роль: {{ profile?.role || 'не указана' }}
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -118,6 +121,9 @@
                 </div>
             </UCard>
         </div>
+
+        <!-- Компонент тестирования (только в development) -->
+        <TestAuthControls v-if="isDev" />
     </div>
 </template>
 

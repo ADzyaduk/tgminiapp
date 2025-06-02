@@ -7,7 +7,7 @@
           <UIcon name="i-lucide-anchor" class="w-6 h-6" />
           <span class="font-semibold text-lg">BoatRent</span>
         </NuxtLink>
-        
+
         <!-- Основная навигация -->
         <div class="hidden md:flex items-center gap-4">
           <NuxtLink to="/" class="text-gray-700 hover:text-primary transition">
@@ -17,43 +17,33 @@
             Групповые поездки
           </NuxtLink>
         </div>
-        
+
         <!-- Действия пользователя -->
         <div class="flex items-center gap-3">
           <!-- Профиль пользователя -->
-          <div v-if="user" class="relative">
-            <UAvatar
-              :src="userAvatar"
-              :alt="user.email || 'Пользователь'"
-              size="sm"
-              class="cursor-pointer"
-              @click="toggleUserMenu"
-            />
-            
-            <div v-if="showUserMenu" class="absolute right-0 top-full mt-2 w-64 bg-white shadow-lg rounded-md overflow-hidden z-50">
+          <div v-if="isAuthenticated && profile" class="relative">
+            <UAvatar :src="userAvatar" :alt="profile.name || profile.email || 'Пользователь'" size="sm"
+              class="cursor-pointer" @click="toggleUserMenu" />
+
+            <div v-if="showUserMenu"
+              class="absolute right-0 top-full mt-2 w-64 bg-white shadow-lg rounded-md overflow-hidden z-50">
               <div class="p-3 border-b">
-                <div class="font-medium">{{ user.email }}</div>
+                <div class="font-medium">{{ profile.name || profile.email }}</div>
                 <div class="text-xs">Роль: {{ userRoleLabel }}</div>
               </div>
-              <UButton
-                v-for="(item, index) in userMenuItems.filter(item => !item.isProfile)"
-                :key="index"
-                :to="item.to"
-                :variant="item.variant"
-                :icon="item.icon"
-                :class="item.class"
-                block
-                @click="item.click ? item.click() : null"
-              >
+              <UButton v-for="(item, index) in userMenuItems.filter(item => !item.isProfile)" :key="index" :to="item.to"
+                :variant="item.variant" :icon="item.icon" :class="item.class" block
+                @click="item.click ? item.click() : null">
                 {{ item.label }}
               </UButton>
             </div>
           </div>
-          
-          <!-- Кнопки аутентификации -->
+
+          <!-- Telegram Auth -->
           <template v-else>
-            <UButton variant="ghost" to="/login">Войти</UButton>
-            <UButton variant="solid" to="/register">Регистрация</UButton>
+            <UButton variant="solid" to="/telegram-auth" icon="i-heroicons-device-phone-mobile">
+              Войти через Telegram
+            </UButton>
           </template>
         </div>
       </div>
@@ -63,11 +53,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useAuth } from '~/composables/useAuth'
+import { useTelegramAuth } from '~/composables/useTelegramAuth'
 import { useCleanup } from '~/composables/useCleanup'
 
 // Состояние
-const { user, profile, isAdmin, signOut } = useAuth()
+const { profile, isAuthenticated, signOut } = useTelegramAuth()
 const { registerEventListener } = useCleanup()
 const showUserMenu = ref(false)
 
@@ -87,17 +77,22 @@ onMounted(() => {
   registerEventListener(document, 'click', closeUserMenu)
 })
 
+// Алиас для совместимости
+const user = computed(() => profile.value)
+const isAdmin = computed(() => profile.value?.role === 'admin')
+
 // Вычисляемые свойства
 const userAvatar = computed<string>(() => {
-  if (user.value && 'avatar' in user.value && user.value.avatar) return user.value.avatar as string;
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.value?.email || 'User')}`;
+  if (profile.value?.name) {
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.value.name)}`
+  }
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.value?.email || 'User')}`
 })
 
 const userRoleLabel = computed(() => {
-  const role = profile.value?.role || user.value?.user_metadata?.role || 'user'
+  const role = profile.value?.role || 'user'
   switch (role) {
     case 'admin': return 'Администратор'
-    case 'manager': return 'Менеджер'
     case 'agent': return 'Агент'
     default: return 'Пользователь'
   }
@@ -121,9 +116,9 @@ const userMenuItems = computed((): MenuItem[] => [
     isProfile: true
   },
   {
-    label: 'Профиль',
-    to: '/profile',
-    icon: 'i-heroicons-user',
+    label: 'Телефон',
+    to: '/telegram-auth',
+    icon: 'i-heroicons-phone',
     variant: 'ghost' as MenuItemVariant
   },
   ...(isAdmin.value ? [
@@ -154,4 +149,4 @@ const userMenuItems = computed((): MenuItem[] => [
     click: signOut
   }
 ])
-</script> 
+</script>

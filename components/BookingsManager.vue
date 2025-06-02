@@ -92,8 +92,7 @@ import { CalendarDate } from '@internationalized/date'
 import type { Database } from '~/types/supabase'
 import { useSupabaseClient } from '#imports'
 import { useDateStore } from '~/stores/useDateStore'
-import { useAuth } from '~/composables/useAuth'
-import { useManager } from '~/composables/useManager'
+import { useTelegramAuth } from '~/composables/useTelegramAuth'
 
 type BookingRow = Database['public']['Tables']['bookings']['Row']
 type Booking = BookingRow & { profile: { name: string; phone: string } }
@@ -131,17 +130,41 @@ const toast = {
   success: (message: string) => useNuxtApp().$toast?.success?.(message)
 }
 
-// Access check
-const { user, isAdmin } = useAuth()
-const { isManager } = useManager(
-  computed(() => user.value?.id ?? null),
-  computed(() => props.boatId ?? null)
-)
+// Access check с новой авторизацией
+const { profile, isAuthenticated } = useTelegramAuth()
+
+// Проверка менеджера лодки
+const isManager = ref(false)
+
+const checkManager = async () => {
+  if (!profile.value?.id || !props.boatId) {
+    isManager.value = false
+    return
+  }
+
+  try {
+    const result = await $fetch('/api/check-boat-manager', {
+      method: 'POST',
+      body: {
+        boat_id: props.boatId,
+        user_id: profile.value.id
+      }
+    }) as any
+
+    isManager.value = result.isManager || false
+  } catch (error) {
+    console.error('Error checking manager status:', error)
+    isManager.value = false
+  }
+}
+
+// Проверяем права при изменении данных
+watch([() => profile.value?.id, () => props.boatId], checkManager, { immediate: true })
 
 // Проверка доступа - администратор или менеджер конкретной лодки
 const hasAccess = computed(() => {
-  if (!user.value) return false
-  return isAdmin.value || isManager.value
+  if (!profile.value) return false
+  return profile.value.role === 'admin' || isManager.value
 })
 
 // Используем Pinia store для даты

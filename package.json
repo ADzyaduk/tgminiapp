@@ -9,7 +9,10 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "start": "node .output/server/index.mjs",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test:local": "echo '🧪 Откройте http://localhost:3000/telegram-auth для локального тестирования' && npm run dev",
+    "test:setup": "npm install -g ngrok && echo '📋 Теперь запустите: npm run test:ngrok'",
+    "test:ngrok": "echo '🚀 Запустите в отдельном терминале: ngrok http 3000' && npm run dev"
   },
   "dependencies": {
     "@nuxt/ui": "^3.0.2",

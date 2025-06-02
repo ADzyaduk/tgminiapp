@@ -7,21 +7,19 @@ interface JWTPayload {
   telegram_id: string
   role: string
   type: string
-  iat?: number
-  exp?: number
 }
 
 export default defineEventHandler(async (event) => {
   try {
     const body = await readBody(event)
-    const { phone } = body
+    const { id, field, value } = body
 
-    if (!phone) {
+    if (!id || !field) {
       setResponseStatus(event, 400)
-      return { success: false, error: 'Phone number is required' }
+      return { success: false, error: 'User ID and field are required' }
     }
 
-    // Получаем access token из cookies
+    // Проверяем JWT токен
     const accessToken = getCookie(event, 'tg-access-token')
 
     if (!accessToken) {
@@ -29,11 +27,10 @@ export default defineEventHandler(async (event) => {
       return { success: false, error: 'Authentication required' }
     }
 
-    // Проверяем токен
     const config = useRuntimeConfig()
     const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-    let tokenPayload: JWTPayload
 
+    let tokenPayload: JWTPayload
     try {
       tokenPayload = jwt.verify(accessToken, jwtSecret) as JWTPayload
     } catch (error) {
@@ -41,33 +38,44 @@ export default defineEventHandler(async (event) => {
       return { success: false, error: 'Invalid token' }
     }
 
-    // Обновляем номер телефона в базе данных
+    // Проверяем права админа
     const supabase = serverSupabaseServiceRole(event)
+    const { data: adminUser } = await (supabase as any)
+      .from('profiles')
+      .select('role')
+      .eq('id', tokenPayload.id)
+      .single()
+
+    if (!adminUser || adminUser.role !== 'admin') {
+      setResponseStatus(event, 403)
+      return { success: false, error: 'Admin access required' }
+    }
+
+    // Обновляем поле пользователя
+    const updateData = { [field]: value }
+
     const { data: updatedUser, error } = await (supabase as any)
       .from('profiles')
-      .update({
-        phone
-      })
-      .eq('id', tokenPayload.id)
+      .update(updateData)
+      .eq('id', id)
       .select('*')
       .single()
 
     if (error) {
-      console.error('❌ Error updating phone:', error)
+      console.error('Error updating user:', error)
       setResponseStatus(event, 500)
-      return { success: false, error: 'Failed to update phone number' }
+      return { success: false, error: 'Failed to update user' }
     }
 
-    console.log('✅ Phone updated successfully for user:', tokenPayload.telegram_id)
+    console.log(`✅ User updated: ${field} = ${value}`)
 
     return {
       success: true,
-      message: 'Phone number updated successfully',
-      user: updatedUser
+      data: updatedUser
     }
 
   } catch (error: any) {
-    console.error('❌ Update phone error:', error)
+    console.error('Update user API error:', error)
     setResponseStatus(event, 500)
     return { success: false, error: 'Internal server error' }
   }

@@ -1,6 +1,6 @@
 import { defineEventHandler, getCookie, setCookie, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
-import * as jwt from 'jsonwebtoken'
+import jwt from 'jsonwebtoken'
 
 interface JWTPayload {
   id: string
@@ -30,8 +30,9 @@ export default defineEventHandler(async (event) => {
       return { success: false, error: 'No refresh token found' }
     }
 
-    const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-here'
-    const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-here'
+    const config = useRuntimeConfig()
+    const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
+    const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
 
     let tokenPayload: JWTPayload | null = null
 
@@ -116,8 +117,9 @@ export default defineEventHandler(async (event) => {
 
 // Генерация JWT токенов
 function generateTokens(user: any) {
-  const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-here'
-  const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-here'
+  const config = useRuntimeConfig()
+  const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
+  const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
 
   const accessToken = jwt.sign(
     {
@@ -146,6 +148,7 @@ function generateTokens(user: any) {
 
 // Установка cookies
 function setCookies(event: any, tokens: { accessToken: string; refreshToken: string }) {
+  const config = useRuntimeConfig()
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
