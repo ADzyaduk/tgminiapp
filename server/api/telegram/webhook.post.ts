@@ -11,6 +11,7 @@ export default defineEventHandler(async (event) => {
       const callbackData = callbackQuery.data
       const messageId = callbackQuery.message.message_id
       const chatId = callbackQuery.message.chat.id
+      const from = callbackQuery.from
 
       console.log('📱 Received callback query:', callbackData)
 
@@ -24,8 +25,68 @@ export default defineEventHandler(async (event) => {
 
       const supabase = await serverSupabaseClient(event)
 
+      // Проверяем, что пользователь - администратор или менеджер для команд управления бронированиями
+      const { data: adminUser } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('telegram_id', from.id.toString())
+        .in('role', ['admin', 'manager'])
+        .single()
+
+      if (!adminUser) {
+        // Отправляем сообщение о том, что у пользователя нет прав
+        await sendTelegramMessage(
+          chatId,
+          '❌ У вас нет прав для выполнения этого действия',
+          messageId
+        )
+        return { ok: true }
+      }
+
+      // Получаем информацию о бронировании для проверки прав на лодку
+      let booking: any = null
       if (bookingType === 'regular') {
-        await handleRegularBookingAction(supabase, action, bookingId, chatId, messageId)
+        const { data } = await supabase
+          .from('bookings')
+          .select('boat_id')
+          .eq('id', bookingId)
+          .single()
+        booking = data
+      } else if (bookingType === 'group_trip') {
+        const { data } = await supabase
+          .from('group_trip_bookings')
+          .select('group_trip:group_trips(boat_id)')
+          .eq('id', bookingId)
+          .single()
+        booking = data ? { boat_id: (data as any).group_trip?.boat_id } : null
+      }
+
+      if (!booking) {
+        await sendTelegramMessage(chatId, '❌ Бронирование не найдено', messageId)
+        return { ok: true }
+      }
+
+      // Проверяем права на управление этой лодкой для всех пользователей (не только с ролью manager)
+      if ((adminUser as any).role !== 'admin') {
+        const { data: managerAccess } = await supabase
+          .from('boat_managers')
+          .select('*')
+          .eq('user_id', (adminUser as any).id)
+          .eq('boat_id', booking.boat_id)
+          .single()
+
+        if (!managerAccess) {
+          await sendTelegramMessage(
+            chatId,
+            '❌ У вас нет прав на управление этой лодкой',
+            messageId
+          )
+          return { ok: true }
+        }
+      }
+
+      if (bookingType === 'regular') {
+        await handleRegularBookingAction(supabase, action, bookingId, chatId, messageId, (adminUser as any).id)
       } else if (bookingType === 'group_trip') {
         await handleGroupTripBookingAction(supabase, action, bookingId, chatId, messageId)
       }
@@ -45,7 +106,8 @@ async function handleRegularBookingAction(
   action: string,
   bookingId: string,
   chatId: string,
-  messageId: string
+  messageId: string,
+  updatedBy: string
 ) {
   try {
     const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled'
@@ -53,7 +115,7 @@ async function handleRegularBookingAction(
     // Получаем текущее бронирование
     const { data: booking, error: fetchError } = await supabase
       .from('bookings')
-      .select('*')
+      .select('*, profile:user_id(*), boat:boat_id(*)')
       .eq('id', bookingId)
       .single()
 
@@ -65,7 +127,11 @@ async function handleRegularBookingAction(
     // Обновляем статус
     const { error: updateError } = await supabase
       .from('bookings')
-      .update({ status: newStatus })
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+        updated_by: updatedBy
+      })
       .eq('id', bookingId)
 
     if (updateError) {
@@ -76,7 +142,7 @@ async function handleRegularBookingAction(
     // Получаем полные данные для уведомления клиенту
     const { data: fullBooking } = await supabase
       .from('bookings')
-      .select('*, profile:user_id(*), boat:boats(*)')
+      .select('*, profile:user_id(*), boat:boat_id(*)')
       .eq('id', bookingId)
       .single()
 
@@ -91,7 +157,7 @@ async function handleRegularBookingAction(
     const emoji = action === 'confirm' ? '✅' : '❌'
     await sendTelegramMessage(
       chatId,
-      `${emoji} Бронирование ${statusText}!`,
+      `${emoji} Бронирование ${statusText} для клиента ${booking.profile?.name || 'Нет имени'} на ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
       messageId
     )
 
