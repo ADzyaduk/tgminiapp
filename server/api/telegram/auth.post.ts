@@ -151,12 +151,19 @@ async function findOrCreateUser(supabase: any, telegramUser: TelegramUser) {
       .single()
 
     if (existingUser) {
-      // Обновляем данные пользователя (имя могло измениться)
+      // Обновляем данные пользователя (имя и аватар могли измениться)
+      const updateData: any = {
+        name: `${telegramUser.first_name || ''} ${telegramUser.last_name || ''}`.trim() || telegramUser.username || 'Telegram User'
+      }
+
+      // Обновляем аватар если он есть
+      if (telegramUser.photo_url) {
+        updateData.photo_url = telegramUser.photo_url
+      }
+
       const { data: updatedUser } = await supabase
         .from('profiles')
-        .update({
-          name: `${telegramUser.first_name || ''} ${telegramUser.last_name || ''}`.trim() || telegramUser.username || 'Telegram User'
-        })
+        .update(updateData)
         .eq('telegram_id', telegramUser.id.toString())
         .select('*')
         .single()
@@ -165,12 +172,17 @@ async function findOrCreateUser(supabase: any, telegramUser: TelegramUser) {
     }
 
     // Создаем нового пользователя
-    const newUserData = {
+    const newUserData: any = {
       id: crypto.randomUUID(),
       telegram_id: telegramUser.id.toString(),
       name: `${telegramUser.first_name || ''} ${telegramUser.last_name || ''}`.trim() || telegramUser.username || 'Telegram User',
       email: telegramUser.username ? `${telegramUser.username}@telegram.local` : `telegram_${telegramUser.id}@local`,
       role: 'user'
+    }
+
+    // Добавляем аватар если он есть
+    if (telegramUser.photo_url) {
+      newUserData.photo_url = telegramUser.photo_url
     }
 
     const { data: newUser, error } = await supabase

@@ -273,6 +273,34 @@ export const useTelegramAuth = () => {
     }
   }
 
+  // Обновление профиля (имя и email)
+  const updateProfile = async (data: { name?: string; email?: string }) => {
+    try {
+      const response = await $fetch<PhoneUpdateResponse>('/api/telegram/update-profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: data
+      })
+
+      if (response.success) {
+        // Обновляем локальный профиль
+        if (profile.value) {
+          if (data.name) profile.value.name = data.name
+          if (data.email) profile.value.email = data.email
+        }
+        return { success: true }
+      }
+
+      return { success: false, error: response.error }
+
+    } catch (error: any) {
+      console.error('Error updating profile:', error)
+      return { success: false, error: error.message }
+    }
+  }
+
   // Запрос номера телефона через Telegram WebApp API
   const requestTelegramContact = async (): Promise<{ success: boolean; phone?: string; error?: string }> => {
     return new Promise((resolve) => {
@@ -358,6 +386,7 @@ export const useTelegramAuth = () => {
     checkAuth,
     initAuth,
     updatePhone,
+    updateProfile,
     requestTelegramContact,
     getTelegramInitData,
     parseInitData

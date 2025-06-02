@@ -10,10 +10,10 @@
 
         <!-- Основная навигация -->
         <div class="hidden md:flex items-center gap-4">
-          <NuxtLink to="/" class="text-gray-700 hover:text-primary transition">
+          <NuxtLink to="/" class="hover:text-primary transition">
             Лодки
           </NuxtLink>
-          <NuxtLink to="/group-tours" class="text-gray-700 hover:text-primary transition">
+          <NuxtLink to="/group-tours" class="hover:text-primary transition">
             Групповые поездки
           </NuxtLink>
         </div>
@@ -21,22 +21,15 @@
         <!-- Действия пользователя -->
         <div class="flex items-center gap-3">
           <!-- Профиль пользователя -->
-          <div v-if="isAuthenticated && profile" class="relative">
-            <UAvatar :src="userAvatar" :alt="profile.name || profile.email || 'Пользователь'" size="sm"
-              class="cursor-pointer" @click="toggleUserMenu" />
-
-            <div v-if="showUserMenu"
-              class="absolute right-0 top-full mt-2 w-64 bg-white shadow-lg rounded-md overflow-hidden z-50">
-              <div class="p-3 border-b">
-                <div class="font-medium">{{ profile.name || profile.email }}</div>
-                <div class="text-xs">Роль: {{ userRoleLabel }}</div>
+          <div v-if="isAuthenticated && profile">
+            <!-- Клик по аватару ведет в профиль -->
+            <NuxtLink to="/profile" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <UAvatar :src="userAvatar" :alt="profile.name || profile.email || 'Пользователь'" size="sm" />
+              <div class="hidden sm:block">
+                <div class="text-sm font-medium">{{ profile.name || 'Пользователь' }}</div>
+                <div class="text-xs opacity-70">{{ userRoleLabel }}</div>
               </div>
-              <UButton v-for="(item, index) in userMenuItems.filter(item => !item.isProfile)" :key="index" :to="item.to"
-                :variant="item.variant" :icon="item.icon" :class="item.class" block
-                @click="item.click ? item.click() : null">
-                {{ item.label }}
-              </UButton>
-            </div>
+            </NuxtLink>
           </div>
 
           <!-- Telegram Auth -->
@@ -52,30 +45,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useTelegramAuth } from '~/composables/useTelegramAuth'
-import { useCleanup } from '~/composables/useCleanup'
 
 // Состояние
-const { profile, isAuthenticated, signOut } = useTelegramAuth()
-const { registerEventListener } = useCleanup()
-const showUserMenu = ref(false)
-
-function toggleUserMenu() {
-  showUserMenu.value = !showUserMenu.value
-}
-
-// Закрывать меню при клике снаружи
-function closeUserMenu(e: Event) {
-  if (showUserMenu.value) {
-    showUserMenu.value = false
-  }
-}
-
-// Правильная регистрация event listener с автоочисткой
-onMounted(() => {
-  registerEventListener(document, 'click', closeUserMenu)
-})
+const { profile, isAuthenticated } = useTelegramAuth()
 
 // Алиас для совместимости
 const user = computed(() => profile.value)
@@ -94,59 +68,8 @@ const userRoleLabel = computed(() => {
   switch (role) {
     case 'admin': return 'Администратор'
     case 'agent': return 'Агент'
+    case 'manager': return 'Менеджер'
     default: return 'Пользователь'
   }
 })
-
-// Типы для элементов меню
-type MenuItemVariant = 'ghost' | 'link' | 'solid' | 'outline' | 'soft' | 'subtle' | undefined;
-interface MenuItem {
-  isProfile?: boolean;
-  label?: string;
-  to?: string;
-  icon?: string;
-  variant?: MenuItemVariant;
-  class?: string;
-  click?: () => void;
-}
-
-// Пункты выпадающего меню
-const userMenuItems = computed((): MenuItem[] => [
-  {
-    isProfile: true
-  },
-  {
-    label: 'Телефон',
-    to: '/telegram-auth',
-    icon: 'i-heroicons-phone',
-    variant: 'ghost' as MenuItemVariant
-  },
-  ...(isAdmin.value ? [
-    {
-      label: 'Админ-панель',
-      to: '/admin',
-      icon: 'i-heroicons-cog-6-tooth',
-      variant: 'ghost' as MenuItemVariant
-    }
-  ] : []),
-  {
-    label: 'Мои бронирования',
-    to: '/bookings',
-    icon: 'i-heroicons-calendar',
-    variant: 'ghost' as MenuItemVariant
-  },
-  {
-    label: 'Групповые поездки',
-    to: '/group-tours',
-    icon: 'i-heroicons-user-group',
-    variant: 'ghost' as MenuItemVariant
-  },
-  {
-    label: 'Выйти',
-    icon: 'i-heroicons-arrow-right-on-rectangle',
-    variant: 'ghost' as MenuItemVariant,
-    class: 'border-t mt-2 pt-2',
-    click: signOut
-  }
-])
 </script>

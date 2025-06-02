@@ -129,10 +129,22 @@ const currentDate = new CalendarDate(
 
 // Используем Pinia store для даты
 const dateStore = useDateStore()
-// Двусторонняя привязка с v-model
-const selectedDate = computed({
-  get: () => dateStore.selectedDate,
-  set: (value: CalendarDate) => dateStore.setDate(value)
+
+// Простой ref для selectedDate, синхронизированный с store
+const selectedDate = ref(dateStore.selectedDate)
+
+// Синхронизируем изменения с store
+watch(selectedDate, (newDate) => {
+  if (newDate) {
+    dateStore.setDate(newDate)
+  }
+}, { immediate: true })
+
+// Следим за изменениями в store
+watch(() => dateStore.selectedDate, (newDate) => {
+  if (newDate && newDate !== selectedDate.value) {
+    selectedDate.value = newDate
+  }
 })
 
 // Инициализируем toast
@@ -148,6 +160,22 @@ const bookedSlots = ref<number[]>([])
 const pph = ref(0)
 const prepayment = ref(0)
 const guestNote = ref('')
+
+// --- АВТОЗАПОЛНЕНИЕ ИЗ ПРОФИЛЯ ---
+// Автозаполняем данные из профиля пользователя
+watch(() => props.user, (newUser) => {
+  if (newUser) {
+    // Заполняем имя из профиля если оно есть
+    if (newUser.name && !guestName.value) {
+      guestName.value = newUser.name
+    }
+
+    // Заполняем телефон из профиля если он есть и поле телефона нужно
+    if (newUser.phone && !guestPhone.value && needsPhoneField.value) {
+      guestPhone.value = newUser.phone
+    }
+  }
+}, { immediate: true })
 
 // Состояние для ручного ввода времени
 const isManualTime = ref(false)
