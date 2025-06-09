@@ -1,5 +1,15 @@
-import { defineEventHandler, readBody, getRouterParam, setResponseStatus } from 'h3'
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
+import { defineEventHandler, readBody, getRouterParam, setResponseStatus, getCookie } from 'h3'
+import { serverSupabaseServiceRole } from '#supabase/server'
+import jwt from 'jsonwebtoken'
+
+interface JWTPayload {
+  id: string
+  telegram_id: string
+  role: string
+  type: string
+  iat?: number
+  exp?: number
+}
 
 export default defineEventHandler(async (event) => {
   try {
@@ -21,19 +31,68 @@ export default defineEventHandler(async (event) => {
       return { error: 'Invalid status. Valid values: pending, confirmed, cancelled' }
     }
 
-    // Проверяем авторизацию пользователя
-    const user = await serverSupabaseUser(event)
+    // Проверяем авторизацию пользователя через JWT токены
+    const accessToken = getCookie(event, 'tg-access-token')
+    const refreshToken = getCookie(event, 'tg-refresh-token')
 
-    if (!user) {
+    if (!refreshToken) {
       setResponseStatus(event, 401)
-      return { error: 'Unauthorized' }
+      return { error: 'Unauthorized - no refresh token' }
+    }
+
+    const config = useRuntimeConfig()
+    const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
+    const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
+
+    let tokenPayload: JWTPayload | null = null
+
+    // Сначала проверяем access token
+    if (accessToken) {
+      try {
+        tokenPayload = jwt.verify(accessToken, jwtSecret) as JWTPayload
+      } catch (error) {
+        console.log('Access token expired or invalid')
+      }
+    }
+
+    // Если access token недействителен, проверяем refresh token
+    if (!tokenPayload) {
+      try {
+        tokenPayload = jwt.verify(refreshToken, jwtRefreshSecret) as JWTPayload
+
+        if (tokenPayload.type !== 'refresh') {
+          throw new Error('Invalid token type')
+        }
+      } catch (error) {
+        console.error('Refresh token invalid:', error)
+        setResponseStatus(event, 401)
+        return { error: 'Unauthorized - invalid tokens' }
+      }
+    }
+
+    if (!tokenPayload) {
+      setResponseStatus(event, 401)
+      return { error: 'Unauthorized - authentication failed' }
     }
 
     // Подключаемся к Supabase
-    const supabase = await serverSupabaseClient(event)
+    const supabase = serverSupabaseServiceRole(event)
+
+    // Получаем пользователя из базы данных
+    const { data: user, error: userError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', tokenPayload.id)
+      .single()
+
+    if (userError || !user) {
+      console.error('User not found in database:', userError)
+      setResponseStatus(event, 401)
+      return { error: 'User not found' }
+    }
 
     // Получаем текущее бронирование
-    const { data: currentBooking, error: fetchError } = await (supabase as any)
+    const { data: currentBooking, error: fetchError } = await supabase
       .from('bookings')
       .select('*')
       .eq('id', bookingId)
@@ -50,10 +109,10 @@ export default defineEventHandler(async (event) => {
     }
 
     // Проверяем права доступа (владелец бронирования, администратор или менеджер лодки)
-    const isAdmin = await checkAdminAccess(supabase, user.id)
-    const isManager = await checkManagerAccess(supabase, user.id, currentBooking.boat_id)
+    const isAdmin = await checkAdminAccess(supabase, (user as any).id)
+    const isManager = await checkManagerAccess(supabase, (user as any).id, (currentBooking as any).boat_id)
 
-    if (currentBooking.user_id !== user.id && !isAdmin && !isManager) {
+    if ((currentBooking as any).user_id !== (user as any).id && !isAdmin && !isManager) {
       setResponseStatus(event, 403)
       return { error: 'Access denied' }
     }
@@ -77,40 +136,40 @@ export default defineEventHandler(async (event) => {
       try {
         // Получаем данные профиля клиента
         let clientProfile = null
-        if (updatedBooking.user_id) {
-          const { data: profile } = await (supabase as any)
+        if ((updatedBooking as any).user_id) {
+          const { data: profile } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', updatedBooking.user_id)
+            .eq('id', (updatedBooking as any).user_id)
             .single()
           clientProfile = profile
         }
 
         // Получаем данные лодки
-        const { data: boat } = await (supabase as any)
+        const { data: boat } = await supabase
           .from('boats')
           .select('*')
-          .eq('id', updatedBooking.boat_id)
+          .eq('id', (updatedBooking as any).boat_id)
           .single()
 
         // Получаем информацию о менеджере, который изменил статус
-        const { data: managerProfile } = await (supabase as any)
+        const { data: managerProfile } = await supabase
           .from('profiles')
           .select('name')
-          .eq('id', user.id)
+          .eq('id', (user as any).id)
           .single()
 
-        const managerName = managerProfile?.name || 'Менеджер'
+        const managerName = (managerProfile as any)?.name || 'Менеджер'
 
         // Создаем объект бронирования с полными данными для уведомлений
         const bookingWithDetails = {
-          ...updatedBooking,
+          ...(updatedBooking as any),
           profile: clientProfile,
           boat: boat
         }
 
         // Отправляем уведомление клиенту (если есть telegram_id)
-        if (clientProfile?.telegram_id) {
+        if ((clientProfile as any)?.telegram_id) {
           const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications')
           await sendClientStatusNotification(bookingWithDetails, status, managerName)
         }
@@ -121,8 +180,8 @@ export default defineEventHandler(async (event) => {
 
         await sendAdminNotification(notificationMessage, {
           parseMode: 'HTML',
-          boatId: updatedBooking.boat_id,
-          bookingId: updatedBooking.id,
+          boatId: (updatedBooking as any).boat_id,
+          bookingId: (updatedBooking as any).id,
           bookingType: 'regular',
           event
         })
