@@ -33,11 +33,17 @@ type BookingWithDetails = Booking & {
  * @param text Необязательный текст для уведомления пользователя
  */
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
-  // Выполняем "в фоне", не дожидаясь ответа, чтобы не блокировать основной поток
-  sendTelegramRequest('answerCallbackQuery', {
-    callback_query_id: callbackQueryId,
-    text: text || '',
-  }).catch(e => console.error('Failed to answer callback query in background:', e));
+  // Выполняем синхронно, чтобы убедиться что ответ дошел
+  try {
+    await sendTelegramRequest('answerCallbackQuery', {
+      callback_query_id: callbackQueryId,
+      text: text || '',
+      show_alert: false // Показывать как всплывающее уведомление или нет
+    });
+    console.log(`✅ Answered callback query: ${callbackQueryId}`);
+  } catch (error) {
+    console.error('❌ Failed to answer callback query:', error);
+  }
 }
 
 /**
@@ -83,28 +89,31 @@ export default defineEventHandler(async (event: H3Event) => {
     const { callback_query } = body;
     const { id: callbackQueryId, data: callbackData, message, from } = callback_query;
 
-    // Немедленно отвечаем Telegram, чтобы кнопка перестала "грузиться"
-    await answerCallbackQuery(callbackQueryId);
+    console.log(`📱 Received callback query: ${callbackData} from user ${from.id}`);
 
     const [bookingType, action, bookingId] = callbackData.split(':');
 
     if (!bookingType || !action || !bookingId) {
       console.error('❌ Invalid callback data format:', callbackData);
+      await answerCallbackQuery(callbackQueryId, 'Ошибка: неверный формат данных');
       return { statusCode: 400, statusMessage: 'Invalid callback_data format.' };
     }
+
+    console.log(`🔄 Processing ${action} for ${bookingType} booking ${bookingId}`);
 
     // Пока поддерживаем только 'regular'
     if (bookingType === 'regular') {
       await handleRegularBooking(event, {
         bookingId,
         action,
-        managerChatId: message.chat.id.toString(),
-        messageId: message.message_id.toString(),
-        managerTelegramId: from.id.toString(),
+        managerChatId: message.chat.id,
+        messageId: message.message_id,
+        managerTelegramId: from.id,
         callbackQueryId,
       });
     } else {
       console.warn(`⚠️ Unsupported booking type: ${bookingType}`);
+      await answerCallbackQuery(callbackQueryId, 'Тип бронирования не поддерживается');
     }
 
     return { statusCode: 200, statusMessage: 'OK' };
@@ -119,9 +128,9 @@ export default defineEventHandler(async (event: H3Event) => {
 interface BookingContext {
   bookingId: string;
   action: 'confirm' | 'cancel' | string;
-  managerChatId: string;
-  messageId: string;
-  managerTelegramId: string;
+  managerChatId: number;
+  messageId: number;
+  managerTelegramId: number;
   callbackQueryId: string;
 }
 
@@ -171,10 +180,16 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
     return;
   }
 
-  // 5. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
+  console.log(`✅ Successfully updated booking ${ctx.bookingId} to ${newStatus}`);
+
+  // 5. Отвечаем на callback query с подтверждением действия
+  const actionText = ctx.action === 'confirm' ? 'подтверждено' : 'отменено';
+  await answerCallbackQuery(ctx.callbackQueryId, `✅ Бронирование успешно ${actionText}!`);
+
+  // 6. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
   await updateManagerMessage(ctx, newStatus, booking);
 
-  // 6. Уведомляем клиента
+  // 7. Уведомляем клиента
   const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications');
   await sendClientStatusNotification(booking as any, newStatus);
 }
@@ -217,12 +232,20 @@ async function updateManagerMessage(ctx: BookingContext, status: string, booking
 
   const fullMessage = `${emoji} <b>БРОНИРОВАНИЕ ${statusText}</b> ${emoji}\n\n${messageBody}`;
 
-  await sendTelegramRequest('editMessageText', {
-    chat_id: ctx.managerChatId,
-    message_id: parseInt(ctx.messageId, 10),
-    text: fullMessage,
-    parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [] }, // Убираем кнопки
-  });
+  console.log(`📝 Updating message for manager ${ctx.managerChatId}, message ${ctx.messageId}`);
+  console.log(`📄 New message text: ${fullMessage.substring(0, 100)}...`);
+
+  try {
+    await sendTelegramRequest('editMessageText', {
+      chat_id: ctx.managerChatId,
+      message_id: ctx.messageId,
+      text: fullMessage,
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: [] }, // Убираем кнопки
+    });
+    console.log(`✅ Successfully updated manager message`);
+  } catch (error) {
+    console.error(`❌ Failed to update manager message:`, error);
+  }
 }
 // #endregion
