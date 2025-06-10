@@ -57,6 +57,10 @@ export default defineEventHandler(async (event) => {
     const chatId = message.chat.id.toString()
     const messageId = message.message_id.toString()
 
+    // Сначала отвечаем на callback query, чтобы убрать "loading" с кнопки.
+    // Делаем это немедленно, до всех операций с базой данных.
+    await answerCallbackQuery(callbackQueryId, '✓')
+
     console.log(`🔘 Button pressed:`, {
       callbackQueryId,
       callbackData,
@@ -68,10 +72,6 @@ export default defineEventHandler(async (event) => {
     console.log('📱 Full callback query:', JSON.stringify(callback_query, null, 2))
     console.log('💬 Message content:', message.text)
     console.log('🎯 Raw callback data:', callbackData)
-
-    // Сначала отвечаем на callback query чтобы убрать "loading"
-    const answerResult = await answerCallbackQuery(callbackQueryId, '🔄 Обрабатываем...')
-    console.log(`📞 answerCallbackQuery result: ${answerResult}`)
 
     // Парсим данные кнопки
     const [bookingType, action, bookingId] = callbackData.split(':')
