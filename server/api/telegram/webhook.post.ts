@@ -1,4 +1,5 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
+import type { H3Event } from 'h3'
 
 // Функция для ответа на callback query
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
@@ -100,7 +101,7 @@ export default defineEventHandler(async (event) => {
 
     // Обрабатываем действие
     if (bookingType === 'regular') {
-      await handleRegularBooking(supabase, action, bookingId, chatId, messageId)
+      await handleRegularBooking(supabase, action, bookingId, chatId, messageId, event)
     } else {
       await handleGroupTripBooking(supabase, action, bookingId, chatId, messageId)
     }
@@ -164,7 +165,7 @@ async function checkUserPermissions(supabase: any, telegramId: string, bookingTy
 }
 
 // Обработка обычного бронирования
-async function handleRegularBooking(supabase: any, action: string, bookingId: string, chatId: string, messageId: string) {
+async function handleRegularBooking(supabase: any, action: string, bookingId: string, chatId: string, messageId: string, event: H3Event) {
   try {
     console.log(`🔍 Processing regular booking: ${bookingId}, action: ${action}`)
 
@@ -244,46 +245,55 @@ async function handleRegularBooking(supabase: any, action: string, bookingId: st
 
     console.log('✅ Status updated successfully')
 
-    // Сначала обновляем сообщение менеджера (убираем кнопки)
-    const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
-    const emoji = action === 'confirm' ? '✅' : '❌'
+    // Обновляем сообщение менеджера (убираем кнопки)
+    const managerUpdateSuccess = await updateManagerMessage(chatId, messageId, action, fullBooking)
 
-    const updatedMessage = `${emoji} <b>Бронирование ${statusText}</b>
+    // Уведомляем клиента
+    const clientNotificationSuccess = await notifyClientOfUpdate(fullBooking, newStatus, event)
 
-👤 <b>Клиент:</b> ${fullBooking.profile?.name || 'Не указано'}
-📅 <b>Дата:</b> ${new Date(fullBooking.start_time).toLocaleDateString('ru-RU')}
-⏰ <b>Время:</b> ${new Date(fullBooking.start_time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})} - ${new Date(fullBooking.end_time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})}
-🚤 <b>Лодка:</b> ${fullBooking.boat?.name || 'Не указано'}
-💰 <b>Стоимость:</b> ${fullBooking.price} ₽`
-
-    console.log(`🔄 Updating manager message in chat ${chatId}, message ${messageId}`)
-    console.log(`📝 New message content: ${updatedMessage}`)
-
-    const updateResult = await sendTelegramMessage(chatId, updatedMessage, messageId)
-
-    if (updateResult) {
-      console.log('✅ Successfully updated manager message and removed buttons')
-    } else {
-      console.log('❌ Failed to update manager message')
-    }
-
-    // Затем пытаемся уведомить клиента (не критично если не получится)
-    console.log('🔍 Booking data:', {
-      user_id: fullBooking.user_id,
-      profile: fullBooking.profile,
-      telegram_id: fullBooking.profile?.telegram_id
-    })
-
-    if (fullBooking.profile?.telegram_id) {
-      console.log(`📱 Sending notification to client: ${fullBooking.profile.telegram_id}`)
-      await notifyClient(fullBooking.profile.telegram_id, newStatus, fullBooking)
-    } else {
-      console.log('❌ No telegram_id found for client notification')
-    }
+    console.log('🏁 Webhook processing finished.', { managerUpdateSuccess, clientNotificationSuccess })
 
   } catch (error) {
-    console.error('Regular booking error:', error)
-    await sendTelegramMessage(chatId, '❌ Произошла ошибка', messageId)
+    console.error('❌ Regular booking error:', error)
+    // Не отправляем сообщение об ошибке, чтобы не затереть кнопки, если что-то пошло не так
+  }
+}
+
+/**
+ * Обновляет сообщение, убирая кнопки и показывая результат
+ */
+async function updateManagerMessage(chatId: string, messageId: string, action: string, booking: any): Promise<boolean> {
+  const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
+  const emoji = action === 'confirm' ? '✅' : '❌'
+
+  const updatedMessage = `${emoji} <b>Бронирование ${statusText}</b>
+
+👤 <b>Клиент:</b> ${booking.profile?.name || 'Не указано'}
+📅 <b>Дата:</b> ${new Date(booking.start_time).toLocaleDateString('ru-RU')}
+⏰ <b>Время:</b> ${new Date(booking.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${new Date(booking.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+💰 <b>Стоимость:</b> ${booking.price} ₽`
+
+  return await sendTelegramMessage(chatId, updatedMessage, messageId)
+}
+
+/**
+ * Уведомляет клиента об изменении статуса
+ */
+async function notifyClientOfUpdate(booking: any, newStatus: string, event: any): Promise<boolean> {
+  if (!booking.profile?.telegram_id) {
+    console.log('❌ No telegram_id found for client notification')
+    return false
+  }
+
+  try {
+    console.log(`📱 Sending status update to client: ${booking.profile.telegram_id}`)
+    // Используем функцию из telegram-notifications, чтобы все уведомления были в одном стиле
+    const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications')
+    return await sendClientStatusNotification(booking, newStatus)
+  } catch (error) {
+    console.error(`❌ Client notification error for ${booking.profile.telegram_id}:`, error)
+    return false
   }
 }
 
@@ -489,10 +499,19 @@ async function sendTelegramMessage(chatId: string, text: string, messageId?: str
         console.error('❌ Telegram API error:', errorData)
 
         // Проверяем специфичные ошибки
-        if (errorData.error_code === 400 && errorData.description?.includes('message is not modified')) {
-          console.log('ℹ️ Message content is the same, this is expected when just removing buttons')
-          return true
+        if (errorData.description?.includes('message is not modified')) {
+          console.log('ℹ️ Message content is the same, this is expected behavior.')
+          return true // Считаем это успехом
         }
+
+        // Если сообщение не найдено для редактирования, просто отправляем новое
+        if (errorData.description?.includes('message to edit not found')) {
+          console.warn('⚠️ Message to edit not found. Sending a new message instead.')
+          // Убираем message_id чтобы отправить новое сообщение
+          delete body.message_id;
+          return await sendTelegramMessage(chatId, text)
+        }
+
       } catch (parseError) {
         console.error('❌ Failed to parse error response:', responseText)
       }
