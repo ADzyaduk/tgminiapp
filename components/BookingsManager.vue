@@ -208,26 +208,26 @@ async function loadBookings() {
     }
 
     const js = selectedDate.value.toDate('UTC')
-    const dayStart = new Date(js); dayStart.setUTCHours(0, 0, 0, 0)
-    const dayEnd = new Date(js); dayEnd.setUTCHours(23, 59, 59, 999)
 
-    // Ищем бронирования, где:
-    // 1. Начало бронирования до конца дня И
-    // 2. Конец бронирования после начала дня
-    // Это даст нам все бронирования, которые пересекаются с выбранным днем
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('*, profile:user_id(name, phone)')
-      .eq('boat_id', props.boatId)
-      .lt('start_time', dayEnd.toISOString())
-      .gt('end_time', dayStart.toISOString())
-      .order('start_time', { ascending: true })
+    // Используем ТОЧНО такой же подход как в debug endpoint'е
+    const dateStr = js.toISOString().split('T')[0] // '2025-06-11'
+    const dayStart = new Date(dateStr + 'T00:00:00.000Z')
+    const nextDay = new Date(dayStart)
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1)
 
-    if (error) {
+
+
+    // Используем серверный API endpoint вместо прямого Supabase запроса
+    // чтобы обойти RLS ограничения
+    const response: any = await $fetch(`/api/boats/${props.boatId}/bookings`, {
+      query: { date: dateStr }
+    })
+
+    if (response?.success && response?.bookings) {
+      bookings.value = response.bookings as Booking[]
+    } else {
       bookings.value = []
       toast.error('Не удалось загрузить бронирования')
-    } else {
-      bookings.value = data as Booking[]
     }
   } catch (e) {
     console.error('Ошибка загрузки бронирований:', e)
@@ -242,20 +242,22 @@ async function loadBookings() {
 const groups = computed(() => {
   const map = bookings.value.reduce<Record<Status, Booking[]>>(
     (acc: Record<Status, Booking[]>, b: Booking) => {
-      (acc[b.status as Status] ||= []).push(b)
+      ; (acc[b.status as Status] ||= []).push(b)
       return acc
     },
     { pending: [], confirmed: [], cancelled: [] }
   )
 
   // Возвращаем только активные статусы (не отмененные)
-  return (Object.values(Status) as Status[])
+  const result = (Object.values(Status) as Status[])
     .filter(status => status !== Status.cancelled) // Исключаем отмененные
     .map(status => ({ status, bookings: map[status] }))
     .filter(g =>
       g.bookings.length > 0 &&
       (activeFilter.value === Filter.all || g.status === Status.pending)
     )
+
+  return result
 })
 
 // Отдельное computed свойство для отмененных бронирований

@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
 
     // Отправляем уведомления
     try {
-      console.log('📧 Starting notification process for booking:', (booking as any).id)
+
 
       // Отправляем улучшенное уведомление менеджерам
       const enhancedMessage = formatBookingNotificationEnhanced(booking)

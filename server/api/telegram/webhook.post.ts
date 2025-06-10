@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
           .eq('id', bookingId)
           .single()
 
-        console.log('📊 Regular booking query result:', { data, error })
+
         booking = data
       } else if (bookingType === 'group_trip') {
         const { data, error } = await supabase
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
           .eq('id', bookingId)
           .single()
 
-        console.log('📊 Group trip booking query result:', { data, error })
+
         booking = data ? { boat_id: (data as any).group_trip?.boat_id } : null
       }
 
@@ -77,7 +77,7 @@ export default defineEventHandler(async (event) => {
         return { ok: true }
       }
 
-      console.log('✅ Booking found:', booking)
+
 
       // Проверяем права на управление этой лодкой для всех пользователей (не только с ролью manager)
       if ((adminUser as any).role !== 'admin') {
@@ -137,7 +137,7 @@ async function handleRegularBookingAction(
       .eq('id', bookingId)
       .single()
 
-    console.log('📊 Booking fetch result:', { booking: booking?.id, error: fetchError })
+
 
     if (fetchError || !booking) {
       console.log('❌ Booking not found in handleRegularBookingAction:', fetchError)
@@ -145,15 +145,20 @@ async function handleRegularBookingAction(
       return
     }
 
-    console.log('✅ Booking details:', {
-      id: booking.id,
-      guest_name: booking.guest_name,
-      boat_name: booking.boat?.name,
-      current_status: booking.status
-    })
+    // Проверяем, не изменен ли уже статус
+    if (booking.status !== 'pending') {
+      const currentStatusText = booking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
+      const emoji = booking.status === 'confirmed' ? '✅' : '❌'
+
+      await sendTelegramMessage(
+        chatId,
+        `${emoji} Бронирование ${currentStatusText} для клиента ${booking.profile?.name || 'Нет имени'} на ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
+        messageId
+      )
+      return
+    }
 
     // Обновляем статус
-    console.log('⚡ Updating booking status to:', newStatus)
     const { error: updateError } = await supabase
       .from('bookings')
       .update({
@@ -167,7 +172,7 @@ async function handleRegularBookingAction(
       return
     }
 
-    console.log('✅ Booking status updated successfully')
+
 
     // Получаем полные данные для уведомления клиенту
     const { data: fullBooking } = await supabase
@@ -194,7 +199,7 @@ async function handleRegularBookingAction(
       messageId
     )
 
-    console.log('✅ handleRegularBookingAction completed successfully')
+
 
   } catch (error) {
     console.error('❌ Error in handleRegularBookingAction:', error)
@@ -222,6 +227,19 @@ async function handleGroupTripBookingAction(
 
     if (fetchError || !booking) {
       await sendTelegramMessage(chatId, '❌ Бронирование групповой поездки не найдено', messageId)
+      return
+    }
+
+    // Проверяем, не изменен ли уже статус
+    if (booking.status !== 'pending') {
+      const currentStatusText = booking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
+      const emoji = booking.status === 'confirmed' ? '✅' : '❌'
+
+      await sendTelegramMessage(
+        chatId,
+        `${emoji} Бронирование групповой поездки ${currentStatusText}!`,
+        messageId
+      )
       return
     }
 
@@ -289,7 +307,7 @@ async function handleGroupTripBookingAction(
 }
 
 // Отправка Telegram сообщения
-async function sendTelegramMessage(chatId: string, text: string, messageId?: string) {
+async function sendTelegramMessage(chatId: string, text: string, messageId?: string, removeButtons: boolean = true) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) return
@@ -306,6 +324,11 @@ async function sendTelegramMessage(chatId: string, text: string, messageId?: str
 
     if (messageId) {
       body.message_id = messageId
+
+      // При редактировании сообщения убираем кнопки
+      if (removeButtons) {
+        body.reply_markup = { inline_keyboard: [] }
+      }
     }
 
     await fetch(url, {

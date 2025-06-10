@@ -389,25 +389,26 @@ function setManualTime() {
 async function fetchBookings() {
   try {
     if (!selectedDate.value) {
-      console.warn('fetchBookings called without a valid selectedDate')
       return
     }
 
     const js = selectedDate.value.toDate('UTC')
-    const start = new Date(js); start.setHours(WORK_START, 0, 0, 0)
-    const end = new Date(js); end.setHours(WORK_END, 0, 0, 0)
+    const dateStr = js.toISOString().split('T')[0] // '2025-06-11'
 
-    const { data } = await supabaseClient
-      .from('bookings')
-      .select('start_time, end_time')
-      .eq('boat_id', props.boatId)
-      .eq('status', 'confirmed')
-      .gte('start_time', start.toISOString())
-      .lte('end_time', end.toISOString())
+    // Используем серверный API endpoint для получения всех бронирований
+    const response: any = await $fetch(`/api/boats/${props.boatId}/bookings`, {
+      query: { date: dateStr }
+    })
 
-    if (data) {
-      const hours = data.flatMap(b => {
-        // Используем безопасное приведение типов
+    if (response?.success && response?.bookings) {
+      const data = response.bookings
+
+      // Учитываем не только confirmed, но и pending бронирования как занятые слоты
+      const occupiedBookings = data.filter((b: any) =>
+        b.status === 'confirmed' || b.status === 'pending'
+      )
+
+      const hours = occupiedBookings.flatMap((b: any) => {
         const startTime = b.start_time as string
         const endTime = b.end_time as string
         const s = new Date(startTime).getHours()
@@ -415,6 +416,8 @@ async function fetchBookings() {
         return Array.from({ length: e - s }, (_, i) => s + i)
       })
       bookedSlots.value = [...new Set(hours)]
+    } else {
+      bookedSlots.value = []
     }
   } catch (error) {
     console.error('Error in fetchBookings:', error)

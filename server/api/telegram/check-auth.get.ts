@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     if (accessToken) {
       try {
         tokenPayload = jwt.verify(accessToken, jwtSecret) as JWTPayload
-        console.log('✅ Valid access token found')
+
       } catch (error) {
         console.log('❌ Access token expired or invalid')
       }
@@ -95,7 +95,7 @@ export default defineEventHandler(async (event) => {
 
     const userProfile = user as UserProfile
 
-    console.log('✅ Auth check successful for user:', userProfile.telegram_id)
+
 
     return {
       success: true,
