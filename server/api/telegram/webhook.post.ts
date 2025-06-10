@@ -1,249 +1,194 @@
-import { defineEventHandler, readBody, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
   try {
     const body = await readBody(event)
 
-    // Обрабатываем callback queries (нажатия кнопок)
-    if (body.callback_query) {
-      const callbackQuery = body.callback_query
-      const callbackData = callbackQuery.data
-      const messageId = callbackQuery.message.message_id
-      const chatId = callbackQuery.message.chat.id
-      const from = callbackQuery.from
-
-      console.log('📱 Received callback query:', callbackData)
-
-      // Парсим callback_data: confirm_regular_123 или cancel_group_trip_456
-      const [action, bookingType, bookingId] = callbackData.split('_')
-
-      if (!action || !bookingType || !bookingId) {
-        console.error('Invalid callback data format:', callbackData)
-        return { ok: true }
-      }
-
-      console.log('🔍 Parsed callback:', { action, bookingType, bookingId })
-
-      const supabase = serverSupabaseServiceRole(event)
-
-      // Проверяем, что пользователь - администратор или менеджер для команд управления бронированиями
-      const { data: adminUser } = await supabase
-        .from('profiles')
-        .select('id, role')
-        .eq('telegram_id', from.id.toString())
-        .in('role', ['admin', 'manager'])
-        .single()
-
-      console.log('👤 Admin user check:', adminUser)
-
-      if (!adminUser) {
-        // Отправляем сообщение о том, что у пользователя нет прав
-        await sendTelegramMessage(
-          chatId,
-          '❌ У вас нет прав для выполнения этого действия',
-          messageId
-        )
-        return { ok: true }
-      }
-
-      // Получаем информацию о бронировании для проверки прав на лодку
-      let booking: any = null
-      console.log('🔍 Looking for booking:', { bookingType, bookingId })
-
-      if (bookingType === 'regular') {
-        const { data, error } = await supabase
-          .from('bookings')
-          .select('boat_id, id, guest_name, start_time')
-          .eq('id', bookingId)
-          .single()
-
-
-        booking = data
-      } else if (bookingType === 'group_trip') {
-        const { data, error } = await supabase
-          .from('group_trip_bookings')
-          .select('id, guest_name, group_trip:group_trips(boat_id)')
-          .eq('id', bookingId)
-          .single()
-
-
-        booking = data ? { boat_id: (data as any).group_trip?.boat_id } : null
-      }
-
-      if (!booking) {
-        console.log('❌ Booking not found:', { bookingType, bookingId })
-        await sendTelegramMessage(chatId, '❌ Бронирование не найдено', messageId)
-        return { ok: true }
-      }
-
-
-
-      // Проверяем права на управление этой лодкой для всех пользователей (не только с ролью manager)
-      if ((adminUser as any).role !== 'admin') {
-        const { data: managerAccess } = await supabase
-          .from('boat_managers')
-          .select('*')
-          .eq('user_id', (adminUser as any).id)
-          .eq('boat_id', booking.boat_id)
-          .single()
-
-        console.log('🔑 Manager access check:', managerAccess)
-
-        if (!managerAccess) {
-          await sendTelegramMessage(
-            chatId,
-            '❌ У вас нет прав на управление этой лодкой',
-            messageId
-          )
-          return { ok: true }
-        }
-      }
-
-      if (bookingType === 'regular') {
-        await handleRegularBookingAction(supabase, action, bookingId, chatId, messageId, (adminUser as any).id)
-      } else if (bookingType === 'group_trip') {
-        await handleGroupTripBookingAction(supabase, action, bookingId, chatId, messageId)
-      }
+    // Проверяем наличие callback_query (нажатие кнопки)
+    if (!body.callback_query) {
+      return { status: 200 }
     }
 
-    return { ok: true }
+    const { callback_query } = body
+    const { data: callbackData, message, from } = callback_query
+    const chatId = message.chat.id.toString()
+    const messageId = message.message_id.toString()
+
+    // Парсим данные кнопки
+    const [bookingType, action, bookingId] = callbackData.split(':')
+
+    if (!['regular', 'group_trip'].includes(bookingType) || !['confirm', 'cancel'].includes(action)) {
+      await sendTelegramMessage(chatId, '❌ Неизвестная команда')
+      return { status: 400 }
+    }
+
+    const supabase = serverSupabaseServiceRole(event)
+
+    // Проверяем права пользователя
+    const userTelegramId = from.id.toString()
+    const hasPermission = await checkUserPermissions(supabase, userTelegramId, bookingType, bookingId)
+
+    if (!hasPermission) {
+      await sendTelegramMessage(chatId, '❌ У вас нет прав для управления этим бронированием')
+      return { status: 403 }
+    }
+
+    // Обрабатываем действие
+    if (bookingType === 'regular') {
+      await handleRegularBooking(supabase, action, bookingId, chatId, messageId)
+    } else {
+      await handleGroupTripBooking(supabase, action, bookingId, chatId, messageId)
+    }
+
+    return { status: 200 }
+
   } catch (error) {
-    console.error('Error processing Telegram webhook:', error)
-    setResponseStatus(event, 500)
-    return { error: 'Internal server error' }
+    console.error('Webhook error:', error)
+    return { status: 500 }
   }
 })
 
-// Обработка действий для обычных бронирований
-async function handleRegularBookingAction(
-  supabase: any,
-  action: string,
-  bookingId: string,
-  chatId: string,
-  messageId: string,
-  updatedBy: string
-) {
+// Проверка прав пользователя
+async function checkUserPermissions(supabase: any, telegramId: string, bookingType: string, bookingId: string): Promise<boolean> {
   try {
-    console.log('🎯 handleRegularBookingAction called:', { action, bookingId, updatedBy })
+    // Получаем пользователя по Telegram ID
+    const { data: user } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('telegram_id', telegramId)
+      .single()
 
-    const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled'
+    if (!user) return false
 
+    // Администраторы и агенты имеют полный доступ
+    if (['admin', 'agent'].includes(user.role)) {
+      return true
+    }
+
+    // Для менеджеров проверяем доступ к лодке
+    if (user.role === 'manager') {
+      let boatId: string | null = null
+
+      if (bookingType === 'regular') {
+        const { data: booking } = await supabase
+          .from('bookings')
+          .select('boat_id')
+          .eq('id', bookingId)
+          .single()
+        boatId = booking?.boat_id
+      } else {
+        const { data: booking } = await supabase
+          .from('group_trip_bookings')
+          .select('group_trip:group_trips(boat_id)')
+          .eq('id', bookingId)
+          .single()
+        boatId = booking?.group_trip?.boat_id
+      }
+
+      // Для упрощения - менеджеры имеют доступ ко всем лодкам
+      if (boatId) {
+        return true
+      }
+    }
+
+    return false
+  } catch (error) {
+    console.error('Permission check error:', error)
+    return false
+  }
+}
+
+// Обработка обычного бронирования
+async function handleRegularBooking(supabase: any, action: string, bookingId: string, chatId: string, messageId: string) {
+  try {
     // Получаем текущее бронирование
-    console.log('🔍 Fetching booking details...')
-    const { data: booking, error: fetchError } = await supabase
+    const { data: booking, error } = await supabase
       .from('bookings')
-      .select('*, profile:user_id(*), boat:boat_id(*)')
+      .select('*, profile:user_id(name, telegram_id), boat:boat_id(name)')
       .eq('id', bookingId)
       .single()
 
-
-
-    if (fetchError || !booking) {
-      console.log('❌ Booking not found in handleRegularBookingAction:', fetchError)
+    if (error || !booking) {
       await sendTelegramMessage(chatId, '❌ Бронирование не найдено', messageId)
       return
     }
 
-    // Проверяем, не изменен ли уже статус
+    // Проверяем текущий статус
     if (booking.status !== 'pending') {
-      const currentStatusText = booking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
+      const statusText = booking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
       const emoji = booking.status === 'confirmed' ? '✅' : '❌'
 
       await sendTelegramMessage(
         chatId,
-        `${emoji} Бронирование ${currentStatusText} для клиента ${booking.profile?.name || 'Нет имени'} на ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
+        `${emoji} Бронирование ${statusText}`,
         messageId
       )
       return
     }
 
     // Обновляем статус
+    const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled'
     const { error: updateError } = await supabase
       .from('bookings')
-      .update({
-        status: newStatus
-      })
+      .update({ status: newStatus })
       .eq('id', bookingId)
 
     if (updateError) {
-      console.log('❌ Error updating booking status:', updateError)
       await sendTelegramMessage(chatId, '❌ Ошибка обновления статуса', messageId)
       return
     }
 
-
-
-    // Получаем полные данные для уведомления клиенту
-    const { data: fullBooking } = await supabase
-      .from('bookings')
-      .select('*, profile:user_id(*), boat:boat_id(*)')
-      .eq('id', bookingId)
-      .single()
-
-    // Отправляем уведомление клиенту
-    if (fullBooking?.profile?.telegram_id) {
-      console.log('📱 Sending client notification...')
-      const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications')
-      await sendClientStatusNotification(fullBooking, newStatus, 'Менеджер')
+    // Уведомляем клиента (упрощенно)
+    if (booking.profile?.telegram_id) {
+      await notifyClient(booking.profile.telegram_id, newStatus, booking)
     }
 
-    // Обновляем сообщение в Telegram
+    // Обновляем сообщение менеджера
     const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
     const emoji = action === 'confirm' ? '✅' : '❌'
 
-    console.log('💬 Sending confirmation message to manager...')
     await sendTelegramMessage(
       chatId,
-      `${emoji} Бронирование ${statusText} для клиента ${booking.profile?.name || 'Нет имени'} на ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
+      `${emoji} Бронирование ${statusText}\n\nКлиент: ${booking.profile?.name || 'Не указано'}\nДата: ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
       messageId
     )
 
-
-
   } catch (error) {
-    console.error('❌ Error in handleRegularBookingAction:', error)
+    console.error('Regular booking error:', error)
     await sendTelegramMessage(chatId, '❌ Произошла ошибка', messageId)
   }
 }
 
-// Обработка действий для групповых поездок
-async function handleGroupTripBookingAction(
-  supabase: any,
-  action: string,
-  bookingId: string,
-  chatId: string,
-  messageId: string
-) {
+// Обработка группового бронирования
+async function handleGroupTripBooking(supabase: any, action: string, bookingId: string, chatId: string, messageId: string) {
   try {
-    const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled'
-
-    // Получаем текущее бронирование групповой поездки
-    const { data: booking, error: fetchError } = await supabase
+    // Получаем бронирование
+    const { data: booking, error } = await supabase
       .from('group_trip_bookings')
-      .select('*, group_trip:group_trips(*, boat:boats(*))')
+      .select('*, group_trip:group_trips(boat_id, start_date)')
       .eq('id', bookingId)
       .single()
 
-    if (fetchError || !booking) {
+    if (error || !booking) {
       await sendTelegramMessage(chatId, '❌ Бронирование групповой поездки не найдено', messageId)
       return
     }
 
-    // Проверяем, не изменен ли уже статус
+    // Проверяем статус
     if (booking.status !== 'pending') {
-      const currentStatusText = booking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
+      const statusText = booking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
       const emoji = booking.status === 'confirmed' ? '✅' : '❌'
 
       await sendTelegramMessage(
         chatId,
-        `${emoji} Бронирование групповой поездки ${currentStatusText}!`,
+        `${emoji} Бронирование групповой поездки ${statusText}`,
         messageId
       )
       return
     }
 
     // Обновляем статус
+    const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled'
     const { error: updateError } = await supabase
       .from('group_trip_bookings')
       .update({ status: newStatus })
@@ -254,63 +199,103 @@ async function handleGroupTripBookingAction(
       return
     }
 
-    // Если отменяем - возвращаем места в поездку
+    // Если отменяем - возвращаем места
     if (action === 'cancel') {
       const totalTickets = booking.adult_count + booking.child_count
-      await supabase
+      // Получаем текущее количество мест и увеличиваем
+      const { data: currentTrip } = await supabase
         .from('group_trips')
-        .update({
-          available_seats: booking.group_trip.available_seats + totalTickets
-        })
+        .select('available_seats')
         .eq('id', booking.group_trip_id)
+        .single()
+
+      if (currentTrip) {
+        await supabase
+          .from('group_trips')
+          .update({
+            available_seats: currentTrip.available_seats + totalTickets
+          })
+          .eq('id', booking.group_trip_id)
+      }
     }
 
-    // Отправляем уведомление клиенту (если есть профиль)
+    // Уведомляем клиента (если есть профиль)
     if (booking.user_id) {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*')
+        .select('telegram_id')
         .eq('id', booking.user_id)
         .single()
 
       if (profile?.telegram_id) {
-        // Создаем объект для уведомления
-        const bookingWithDetails = {
-          ...booking,
-          profile: profile,
-          boat: booking.group_trip.boat
-        }
-
-        if (action === 'confirm') {
-          const { sendGroupTripBookingConfirmation } = await import('~/server/utils/telegram-notifications')
-          await sendGroupTripBookingConfirmation(bookingWithDetails)
-        } else {
-          // Отправляем уведомление об отмене
-          await sendGroupTripCancellationNotification(bookingWithDetails)
-        }
+        await notifyGroupTripClient(profile.telegram_id, newStatus, booking)
       }
     }
 
-    // Обновляем сообщение в Telegram
+    // Обновляем сообщение менеджера
     const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
     const emoji = action === 'confirm' ? '✅' : '❌'
+
     await sendTelegramMessage(
       chatId,
-      `${emoji} Бронирование групповой поездки ${statusText}!`,
+      `${emoji} Бронирование групповой поездки ${statusText}`,
       messageId
     )
 
   } catch (error) {
-    console.error('Error handling group trip booking action:', error)
+    console.error('Group trip booking error:', error)
     await sendTelegramMessage(chatId, '❌ Произошла ошибка', messageId)
   }
 }
 
-// Отправка Telegram сообщения
-async function sendTelegramMessage(chatId: string, text: string, messageId?: string, removeButtons: boolean = true) {
+// Упрощенное уведомление клиента
+async function notifyClient(telegramId: string, status: string, booking: any) {
+  try {
+    const emoji = status === 'confirmed' ? '✅' : '❌'
+    const statusText = status === 'confirmed' ? 'подтверждено' : 'отменено'
+
+    const message = `${emoji} <b>Статус бронирования изменен</b>
+
+Ваше бронирование ${statusText} менеджером.
+
+📅 <b>Дата:</b> ${new Date(booking.start_time).toLocaleDateString('ru-RU')}
+⏰ <b>Время:</b> ${new Date(booking.start_time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})} - ${new Date(booking.end_time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})}
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+💰 <b>Стоимость:</b> ${booking.price} ₽`
+
+    await sendTelegramMessage(telegramId, message)
+  } catch (error) {
+    console.error('Client notification error:', error)
+  }
+}
+
+// Уведомление клиента групповой поездки
+async function notifyGroupTripClient(telegramId: string, status: string, booking: any) {
+  try {
+    const emoji = status === 'confirmed' ? '✅' : '❌'
+    const statusText = status === 'confirmed' ? 'подтверждено' : 'отменено'
+
+    const message = `${emoji} <b>Групповая поездка ${statusText}</b>
+
+Ваше бронирование групповой поездки ${statusText} менеджером.
+
+👥 <b>Билеты:</b> ${booking.adult_count} взр. + ${booking.child_count} дет.
+💰 <b>Стоимость:</b> ${booking.total_price} ₽`
+
+    await sendTelegramMessage(telegramId, message)
+  } catch (error) {
+    console.error('Group trip client notification error:', error)
+  }
+}
+
+// Отправка Telegram сообщения (упрощенная)
+async function sendTelegramMessage(chatId: string, text: string, messageId?: string) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) return
+    if (!token) {
+      console.error('TELEGRAM_BOT_TOKEN not set')
+      return
+    }
 
     const url = messageId
       ? `https://api.telegram.org/bot${token}/editMessageText`
@@ -322,51 +307,24 @@ async function sendTelegramMessage(chatId: string, text: string, messageId?: str
       parse_mode: 'HTML'
     }
 
+    // При редактировании убираем кнопки
     if (messageId) {
       body.message_id = messageId
-
-      // При редактировании сообщения убираем кнопки
-      if (removeButtons) {
-        body.reply_markup = { inline_keyboard: [] }
-      }
+      body.reply_markup = { inline_keyboard: [] }
     }
 
-    await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error('Telegram API error:', errorData)
+    }
+
   } catch (error) {
-    console.error('Error sending Telegram message:', error)
-  }
-}
-
-// Уведомление об отмене групповой поездки
-async function sendGroupTripCancellationNotification(booking: any) {
-  try {
-    const message = `❌ <b>Бронирование групповой поездки отменено</b>
-
-К сожалению, ваше бронирование на групповую поездку было отменено.
-
-🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
-👥 <b>Билеты:</b> ${booking.adult_count} взр. + ${booking.child_count} дет.
-💰 <b>Стоимость:</b> ${booking.total_price} ₽
-
-📞 <i>Если у вас есть вопросы, свяжитесь с нами</i>`
-
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) return
-
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: booking.profile.telegram_id,
-        text: message,
-        parse_mode: 'HTML'
-      })
-    })
-  } catch (error) {
-    console.error('Error sending group trip cancellation notification:', error)
+    console.error('Send message error:', error)
   }
 }

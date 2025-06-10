@@ -19,7 +19,7 @@ interface BookingStat {
 interface GroupStat {
   id: string
   total_price: number
-  booking_status: string
+      status: string
 }
 
 export default defineEventHandler(async (event) => {
@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
     // Получаем статистику по групповым турам
     const { data: groupStats, error: groupError } = await supabase
       .from('group_trip_bookings')
-      .select('id, total_price, booking_status')
+      .select('id, total_price, status')
       .eq('user_id', tokenPayload.id)
 
     if (groupError) {
@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
 
     const totalBookings = bookings.length + groupBookings.length
     const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length +
-                             groupBookings.filter(b => b.booking_status === 'confirmed').length
+                             groupBookings.filter(b => b.status === 'confirmed').length
 
     const totalSpent = bookings.reduce((sum, b) => sum + (b.price || 0), 0) +
                       groupBookings.reduce((sum, b) => sum + (b.total_price || 0), 0)
