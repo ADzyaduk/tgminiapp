@@ -85,11 +85,7 @@ export default defineEventHandler(async (event) => {
         user_id: user ? (user as any).id : null, // Добавляем ID пользователя только если пользователь авторизован
         status: 'pending' // Начальный статус - ожидает подтверждения
       })
-      .select(`
-        *,
-        profile:profiles!bookings_user_id_fkey(name, telegram_id, phone, email),
-        boat:boats!bookings_boat_id_fkey(name)
-      `)
+      .select('*')
       .single()
 
     if (error) {
@@ -102,10 +98,37 @@ export default defineEventHandler(async (event) => {
 
     // Отправляем уведомления
     try {
+      // Получаем данные профиля и лодки для уведомлений
+      let profile = null
+      let boat = null
 
+      if ((booking as any).user_id) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('name, telegram_id, phone, email')
+          .eq('id', (booking as any).user_id)
+          .single()
+        profile = profileData
+      }
+
+      if ((booking as any).boat_id) {
+        const { data: boatData } = await supabase
+          .from('boats')
+          .select('name')
+          .eq('id', (booking as any).boat_id)
+          .single()
+        boat = boatData
+      }
+
+      // Добавляем данные в объект бронирования для уведомлений
+      const bookingWithDetails = {
+        ...(booking as any),
+        profile: profile,
+        boat: boat
+      }
 
       // Отправляем улучшенное уведомление менеджерам
-      const enhancedMessage = formatBookingNotificationEnhanced(booking)
+      const enhancedMessage = formatBookingNotificationEnhanced(bookingWithDetails)
 
       await sendAdminNotification(enhancedMessage, {
         parseMode: 'HTML',
@@ -116,8 +139,8 @@ export default defineEventHandler(async (event) => {
       })
 
       // Отправляем подтверждение клиенту (если есть telegram_id)
-      if ((booking as any).profile?.telegram_id) {
-        await sendClientBookingConfirmation(booking)
+      if (profile && (profile as any).telegram_id) {
+        await sendClientBookingConfirmation(bookingWithDetails)
       }
 
     } catch (notifyError) {
