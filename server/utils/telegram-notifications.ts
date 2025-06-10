@@ -2,7 +2,7 @@
  * Утилиты для работы с уведомлениями Telegram
  */
 
-import { serverSupabaseClient } from '#supabase/server'
+import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
 import { H3Event } from 'h3'
 
 /**
@@ -234,7 +234,7 @@ export async function sendAdminNotification(
     let sentToManagers = false
     if (boatId && event) {
       try {
-        const supabase = await serverSupabaseClient(event)
+        const supabase = serverSupabaseServiceRole(event)
 
         // Получаем менеджеров этой лодки
         const { data: managers } = await supabase
@@ -292,7 +292,8 @@ export async function sendAdminNotification(
     if (!sentToManagers) {
       const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || "1396986028"  // Ваш Telegram ID
 
-      console.log(`Sending notification to admin chat ID: ${adminChatId}`)
+      console.log(`📤 Sending notification to admin chat ID: ${adminChatId}`)
+      console.log(`📝 Message: ${message.substring(0, 100)}...`)
 
       const body: any = {
         chat_id: adminChatId,
@@ -301,6 +302,7 @@ export async function sendAdminNotification(
       }
 
       if (replyMarkup) {
+        console.log(`🔘 Adding buttons: ${JSON.stringify(replyMarkup)}`)
         body.reply_markup = replyMarkup
       }
 
@@ -311,7 +313,12 @@ export async function sendAdminNotification(
       })
 
       const result = response.ok
-      console.log(`Admin notification result: ${result}`)
+      if (!result) {
+        const errorData = await response.json()
+        console.error(`❌ Admin notification failed:`, errorData)
+      } else {
+        console.log(`✅ Admin notification sent successfully`)
+      }
       return result
     }
 
@@ -332,7 +339,7 @@ export async function sendBoatManagersNotification(
   parseMode: 'HTML' | 'Markdown' = 'HTML'
 ): Promise<boolean> {
   try {
-    const supabase = await serverSupabaseClient(event)
+    const supabase = serverSupabaseServiceRole(event)
 
     // Получаем ID менеджеров этой лодки
     const { data: managers } = await supabase

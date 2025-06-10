@@ -166,21 +166,7 @@ async function handleRegularBooking(supabase: any, action: string, bookingId: st
       return
     }
 
-    // Уведомляем клиента (упрощенно)
-    console.log('🔍 Booking data:', {
-      user_id: booking.user_id,
-      profile: booking.profile,
-      telegram_id: booking.profile?.telegram_id
-    })
-
-    if (booking.profile?.telegram_id) {
-      console.log(`📱 Sending notification to client: ${booking.profile.telegram_id}`)
-      await notifyClient(booking.profile.telegram_id, newStatus, booking)
-    } else {
-      console.log('❌ No telegram_id found for client notification')
-    }
-
-    // Обновляем сообщение менеджера
+        // Сначала обновляем сообщение менеджера (убираем кнопки)
     const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
     const emoji = action === 'confirm' ? '✅' : '❌'
 
@@ -195,6 +181,20 @@ async function handleRegularBooking(supabase: any, action: string, bookingId: st
       console.log('✅ Successfully updated manager message and removed buttons')
     } else {
       console.log('❌ Failed to update manager message')
+    }
+
+    // Затем пытаемся уведомить клиента (не критично если не получится)
+    console.log('🔍 Booking data:', {
+      user_id: booking.user_id,
+      profile: booking.profile,
+      telegram_id: booking.profile?.telegram_id
+    })
+
+    if (booking.profile?.telegram_id) {
+      console.log(`📱 Sending notification to client: ${booking.profile.telegram_id}`)
+      await notifyClient(booking.profile.telegram_id, newStatus, booking)
+    } else {
+      console.log('❌ No telegram_id found for client notification')
     }
 
   } catch (error) {
@@ -267,7 +267,23 @@ async function handleGroupTripBooking(supabase: any, action: string, bookingId: 
       }
     }
 
-    // Уведомляем клиента (если есть профиль)
+        // Сначала обновляем сообщение менеджера
+    const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
+    const emoji = action === 'confirm' ? '✅' : '❌'
+
+    const updateResult = await sendTelegramMessage(
+      chatId,
+      `${emoji} Бронирование групповой поездки ${statusText}`,
+      messageId
+    )
+
+    if (updateResult) {
+      console.log('✅ Successfully updated group trip manager message and removed buttons')
+    } else {
+      console.log('❌ Failed to update group trip manager message')
+    }
+
+    // Затем пытаемся уведомить клиента
     console.log('🔍 Group booking data:', {
       user_id: booking.user_id,
       profile: booking.profile,
@@ -280,16 +296,6 @@ async function handleGroupTripBooking(supabase: any, action: string, bookingId: 
     } else {
       console.log('❌ No telegram_id found for group trip client notification')
     }
-
-    // Обновляем сообщение менеджера
-    const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
-    const emoji = action === 'confirm' ? '✅' : '❌'
-
-    await sendTelegramMessage(
-      chatId,
-      `${emoji} Бронирование групповой поездки ${statusText}`,
-      messageId
-    )
 
   } catch (error) {
     console.error('Group trip booking error:', error)

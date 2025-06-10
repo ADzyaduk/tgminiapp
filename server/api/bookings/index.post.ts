@@ -85,7 +85,11 @@ export default defineEventHandler(async (event) => {
         user_id: user ? (user as any).id : null, // Добавляем ID пользователя только если пользователь авторизован
         status: 'pending' // Начальный статус - ожидает подтверждения
       })
-      .select('*, profile:user_id(*), boat:boat_id(name)')
+      .select(`
+        *,
+        profile:profiles!bookings_user_id_fkey(name, telegram_id, phone, email),
+        boat:boats!bookings_boat_id_fkey(name)
+      `)
       .single()
 
     if (error) {
