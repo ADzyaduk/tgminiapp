@@ -16,8 +16,8 @@ export function formatBookingNotification(booking: any): string {
     minute: '2-digit'
   })
 
-  // Получаем телефон из guest_phone или profile.phone
-  const phoneNumber = booking.guest_phone || booking.profile?.phone || 'Не указан'
+  // Получаем телефон из guest_phone (Telegram не предоставляет номер телефона через Bot API)
+  const phoneNumber = booking.guest_phone || 'Не указан'
 
   // Получаем имя из guest_name или profile.name
   const clientName = booking.guest_name || booking.profile?.name || 'Не указано'
@@ -59,7 +59,7 @@ export function formatStatusNotification(booking: any, status: string): string {
 ID: ${booking.id}
 Статус: <b>${statusText}</b>
 Клиент: ${booking.profile?.name || 'Не указано'} (${booking.profile?.email || 'Нет email'})
-Телефон: ${booking.profile?.phone || 'Не указан'}
+Телефон: ${booking.guest_phone || 'Не указан'}
 Лодка: ${booking.boat?.name || 'Не указано'}
 Дата: ${formattedDate}
 Цена: ${booking.price} ₽
@@ -98,7 +98,7 @@ export function formatGroupTripStatusNotification(booking: any, status: string):
 ID: ${booking.id}
 Статус: <b>${statusText}</b>
 Клиент: ${clientName} (${booking.profile?.email || 'Нет email'})
-Телефон: ${booking.profile?.phone || 'Не указан'}
+Телефон: ${booking.guest_phone || 'Не указан'}
 Лодка: ${booking.boat?.name || 'Не указано'}
 Дата: ${formattedDate}
 Билеты: ${booking.adult_count} взр. + ${booking.child_count} дет. = ${totalTickets} мест
@@ -214,8 +214,9 @@ export async function sendAdminNotification(
     // Создаем инлайн кнопки для бронирований
     let replyMarkup = undefined
     if (bookingId && bookingType) {
-      const confirmData = `${bookingType}:confirm:${bookingId}`
-      const cancelData = `${bookingType}:cancel:${bookingId}`
+      // Ограничиваем длину callback_data до 64 байт согласно документации Telegram
+      const confirmData = `${bookingType}:confirm:${bookingId}`.substring(0, 64)
+      const cancelData = `${bookingType}:cancel:${bookingId}`.substring(0, 64)
 
       console.log(`🔘 Creating inline buttons:`)
       console.log(`   ✅ Confirm: ${confirmData}`)

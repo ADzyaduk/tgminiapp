@@ -20,13 +20,17 @@ interface TelegramUser {
   last_name?: string
   username?: string
   photo_url?: string
-  phone?: string
+  is_bot?: boolean
+  language_code?: string
+  is_premium?: boolean
+  added_to_attachment_menu?: boolean
 }
 
 interface TelegramInitData {
   user?: TelegramUser
   chat_instance?: string
   chat_type?: string
+  start_param?: string
   auth_date?: number
   hash?: string
 }
