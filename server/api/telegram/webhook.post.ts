@@ -3,18 +3,14 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/supabase'
 
-type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row']
+type Booking = Database['public']['Tables']['bookings']['Row']
+type Profile = Database['public']['Tables']['profiles']['Row']
+type Boat = Database['public']['Tables']['boats']['Row']
 
-// NOTE: The type below is enhanced to include fields that are used in the code but seem
-// to be missing from the auto-generated `types/supabase.ts`. This suggests the types file
-// might be out of sync with the actual database schema. Regenerating the types is recommended.
-type BookingWithDetails = Tables<'bookings'> & {
-  profile: (Tables<'profiles'> & { username?: string; first_name?: string; last_name?: string }) | null
-  boat: Tables<'boats'> | null
-  date?: string
-  time?: string
-  duration?: number
-  people_count?: number
+// Расширенный тип для бронирования с вложенными данными
+type BookingWithDetails = Booking & {
+  profile: Profile | null
+  boat: Boat | null
 }
 
 /**
@@ -180,13 +176,13 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   // 6. Уведомляем клиента
   const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications');
-  await sendClientStatusNotification(booking, newStatus);
+  await sendClientStatusNotification(booking as any, newStatus);
 }
 
 /**
  * Обновляет сообщение менеджера, форматируя его с новым статусом.
  */
-async function updateManagerMessage(ctx: BookingContext, status: string, booking?: any) {
+async function updateManagerMessage(ctx: BookingContext, status: string, booking?: BookingWithDetails) {
   const statusMap: Record<string, { text: string; emoji: string }> = {
     confirmed: { text: 'ПОДТВЕРЖДЕНО', emoji: '✅' },
     cancelled: { text: 'ОТМЕНЕНО', emoji: '❌' },
@@ -198,16 +194,22 @@ async function updateManagerMessage(ctx: BookingContext, status: string, booking
 
   let messageBody: string;
   if (booking) {
-    const clientName = (booking.profile?.first_name || '') + ' ' + (booking.profile?.last_name || '');
-    const clientTelegram = booking.profile?.username ? `@${booking.profile.username}` : 'N/A';
+    const clientName = booking.profile?.name || booking.guest_name || 'Имя не указано';
+    // В профиле нет `username`, используем `telegram_id` если он есть, иначе телефон
+    const clientTelegram = booking.profile?.telegram_id || booking.guest_phone || 'N/A';
+
+    // Форматируем дату и время из start_time и end_time
+    const date = new Date(booking.start_time).toLocaleDateString('ru-RU');
+    const time = `${new Date(booking.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${new Date(booking.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
+
     messageBody = [
         `🛥️ <b>Лодка:</b> ${booking.boat?.name || 'Неизвестно'}`,
-        `👤 <b>Клиент:</b> ${clientName.trim() || 'Имя не указано'}`,
-        `📞 <b>Telegram:</b> ${clientTelegram}`,
-        `📅 <b>Дата:</b> ${booking.date}`,
-        `⏰ <b>Время:</b> ${booking.time}`,
-        `⏳ <b>Длительность:</b> ${booking.duration} ч.`,
-        `👥 <b>Кол-во человек:</b> ${booking.people_count}`,
+        `👤 <b>Клиент:</b> ${clientName.trim()}`,
+        `📞 <b>Контакт:</b> ${clientTelegram}`,
+        `📅 <b>Дата:</b> ${date}`,
+        `⏰ <b>Время:</b> ${time}`,
+        `⏳ <b>Длительность:</b> ${booking.pph || 'N/A'} ч.`,
+        `👥 <b>Кол-во человек:</b> ${booking.peoples || 'N/A'}`,
     ].join('\n');
   } else {
     messageBody = `Бронирование с ID: ${ctx.bookingId} не найдено в системе.`;
