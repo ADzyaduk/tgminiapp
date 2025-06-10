@@ -1,5 +1,26 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 
+// Функция для ответа на callback query
+async function answerCallbackQuery(callbackQueryId: string, text?: string) {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) return
+
+    const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`
+
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text: text || ''
+      })
+    })
+  } catch (error) {
+    console.error('Error answering callback query:', error)
+  }
+}
+
 export default defineEventHandler(async (event) => {
   try {
     const body = await readBody(event)
@@ -10,9 +31,12 @@ export default defineEventHandler(async (event) => {
     }
 
     const { callback_query } = body
-    const { data: callbackData, message, from } = callback_query
+    const { id: callbackQueryId, data: callbackData, message, from } = callback_query
     const chatId = message.chat.id.toString()
     const messageId = message.message_id.toString()
+
+    // Сначала отвечаем на callback query чтобы убрать "loading"
+    await answerCallbackQuery(callbackQueryId)
 
     // Парсим данные кнопки
     const [bookingType, action, bookingId] = callbackData.split(':')

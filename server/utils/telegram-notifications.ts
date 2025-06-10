@@ -68,6 +68,125 @@ ID: ${booking.id}
 }
 
 /**
+ * Форматирует уведомление о статусе групповой поездки
+ */
+export function formatGroupTripStatusNotification(booking: any, status: string): string {
+  const statusEmoji = {
+    confirmed: '✅',
+    completed: '🏁',
+    cancelled: '❌'
+  }[status] || '🔔'
+
+  const statusText = {
+    confirmed: 'подтверждено',
+    completed: 'завершено',
+    cancelled: 'отменено'
+  }[status] || 'изменило статус'
+
+  const formattedDate = new Date(booking.group_trip?.start_time).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const totalTickets = booking.adult_count + booking.child_count
+  const clientName = booking.guest_name || booking.profile?.name || 'Не указано'
+
+  return `${statusEmoji} <b>Групповая поездка ${statusText}</b>
+
+ID: ${booking.id}
+Статус: <b>${statusText}</b>
+Клиент: ${clientName} (${booking.profile?.email || 'Нет email'})
+Телефон: ${booking.profile?.phone || 'Не указан'}
+Лодка: ${booking.boat?.name || 'Не указано'}
+Дата: ${formattedDate}
+Билеты: ${booking.adult_count} взр. + ${booking.child_count} дет. = ${totalTickets} мест
+Стоимость: ${booking.total_price} ₽`
+}
+
+/**
+ * Отправляет уведомление клиенту о смене статуса групповой поездки
+ */
+export async function sendGroupTripStatusNotification(
+  booking: any,
+  status: string,
+  managerName?: string
+): Promise<boolean> {
+  // Проверяем наличие Telegram ID у клиента
+  if (!booking.profile?.telegram_id) {
+    console.log('Client has no telegram_id, skipping group trip status notification')
+    return false
+  }
+
+  const statusEmoji = {
+    confirmed: '✅',
+    completed: '🏁',
+    cancelled: '❌'
+  }[status] || '🔔'
+
+  const statusText = {
+    confirmed: 'подтверждено',
+    completed: 'завершено',
+    cancelled: 'отменено'
+  }[status] || 'изменило статус'
+
+  const formattedDate = new Date(booking.group_trip?.start_time).toLocaleDateString('ru-RU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+  const totalTickets = booking.adult_count + booking.child_count
+  const managerPart = managerName ? ` (${managerName})` : ''
+
+  const message = `${statusEmoji} <b>Статус групповой поездки изменен</b>
+
+Ваше бронирование групповой поездки ${statusText} менеджером${managerPart}.
+
+🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
+📅 <b>Дата:</b> ${formattedDate}
+👥 <b>Билеты:</b> ${booking.adult_count} взр. + ${booking.child_count} дет. = ${totalTickets} мест
+💰 <b>Стоимость:</b> ${booking.total_price} ₽
+🎯 <b>Новый статус:</b> ${statusText}
+
+${status === 'cancelled' ? '😞 <i>Приносим извинения за отмену!</i>' : '🎉 <i>Спасибо за ваш выбор!</i>'}`
+
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) {
+      console.error('Telegram token not configured')
+      return false
+    }
+
+    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: booking.profile.telegram_id,
+        text: message,
+        parse_mode: 'HTML'
+      })
+    })
+
+    if (response.ok) {
+      console.log(`✅ Sent group trip status notification to client: ${booking.profile.telegram_id}`)
+      return true
+    } else {
+      console.error(`❌ Failed to send group trip status notification to client: ${booking.profile.telegram_id}`)
+      return false
+    }
+  } catch (error) {
+    console.error('Error sending group trip status notification to client:', error)
+    return false
+  }
+}
+
+/**
  * Отправляет уведомление администраторам или менеджерам лодки
  */
 export async function sendAdminNotification(
@@ -100,11 +219,11 @@ export async function sendAdminNotification(
           [
             {
               text: '✅ Подтвердить',
-              callback_data: `confirm_${bookingType}_${bookingId}`
+              callback_data: `${bookingType}:confirm:${bookingId}`
             },
             {
               text: '❌ Отменить',
-              callback_data: `cancel_${bookingType}_${bookingId}`
+              callback_data: `${bookingType}:cancel:${bookingId}`
             }
           ]
         ]

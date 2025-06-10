@@ -25,10 +25,10 @@ export default defineEventHandler(async (event) => {
     const { status } = await readBody(event)
 
     // Проверяем валидность статуса
-    const validStatuses = ['pending', 'confirmed', 'cancelled']
+    const validStatuses = ['confirmed', 'completed', 'cancelled']
     if (!validStatuses.includes(status)) {
       setResponseStatus(event, 400)
-      return { error: 'Invalid status. Valid values: pending, confirmed, cancelled' }
+      return { error: 'Invalid status. Valid values: confirmed, completed, cancelled' }
     }
 
     // Проверяем авторизацию пользователя через JWT токены
@@ -91,26 +91,26 @@ export default defineEventHandler(async (event) => {
       return { error: 'User not found' }
     }
 
-    // Получаем текущее бронирование
+    // Получаем текущее бронирование групповой поездки
     const { data: currentBooking, error: fetchError } = await supabase
-      .from('bookings')
-      .select('*')
+      .from('group_trip_bookings')
+      .select('*, group_trip:group_trips(*, boat:boats(*))')
       .eq('id', bookingId)
       .single()
 
     if (fetchError) {
       setResponseStatus(event, 500)
-      return { error: 'Error fetching booking', details: fetchError }
+      return { error: 'Error fetching group trip booking', details: fetchError }
     }
 
     if (!currentBooking) {
       setResponseStatus(event, 404)
-      return { error: 'Booking not found' }
+      return { error: 'Group trip booking not found' }
     }
 
     // Проверяем права доступа (владелец бронирования, администратор или менеджер лодки)
     const isAdmin = await checkAdminAccess(supabase, (user as any).id)
-    const isManager = await checkManagerAccess(supabase, (user as any).id, (currentBooking as any).boat_id)
+    const isManager = await checkManagerAccess(supabase, (user as any).id, (currentBooking as any).group_trip?.boat_id)
 
     if ((currentBooking as any).user_id !== (user as any).id && !isAdmin && !isManager) {
       setResponseStatus(event, 403)
@@ -119,19 +119,38 @@ export default defineEventHandler(async (event) => {
 
     // Обновляем статус бронирования
     const { data: updatedBooking, error: updateError } = await (supabase as any)
-      .from('bookings')
+      .from('group_trip_bookings')
       .update({ status })
       .eq('id', bookingId)
-      .select('*')
+      .select('*, group_trip:group_trips(*, boat:boats(*))')
       .single()
 
     if (updateError) {
-      console.error('Error updating booking status:', updateError)
+      console.error('Error updating group trip booking status:', updateError)
       setResponseStatus(event, 500)
-      return { error: 'Failed to update booking status', details: updateError }
+      return { error: 'Failed to update group trip booking status', details: updateError }
     }
 
-    // Получаем дополнительные данные для уведомлений
+    // Если отменяем бронирование - возвращаем места
+    if (status === 'cancelled' && (currentBooking as any).status !== 'cancelled') {
+      const totalTickets = (currentBooking as any).adult_count + (currentBooking as any).child_count
+      const { data: currentTrip } = await supabase
+        .from('group_trips')
+        .select('available_seats')
+        .eq('id', (currentBooking as any).group_trip_id)
+        .single()
+
+      if (currentTrip) {
+        await (supabase as any)
+          .from('group_trips')
+          .update({
+            available_seats: (currentTrip as any).available_seats + totalTickets
+          })
+          .eq('id', (currentBooking as any).group_trip_id)
+      }
+    }
+
+    // Отправляем уведомления
     if (updatedBooking) {
       try {
         // Получаем данные профиля клиента
@@ -144,13 +163,6 @@ export default defineEventHandler(async (event) => {
             .single()
           clientProfile = profile
         }
-
-        // Получаем данные лодки
-        const { data: boat } = await supabase
-          .from('boats')
-          .select('*')
-          .eq('id', (updatedBooking as any).boat_id)
-          .single()
 
         // Получаем информацию о менеджере, который изменил статус
         const { data: managerProfile } = await supabase
@@ -165,27 +177,27 @@ export default defineEventHandler(async (event) => {
         const bookingWithDetails = {
           ...(updatedBooking as any),
           profile: clientProfile,
-          boat: boat
+          boat: (updatedBooking as any).group_trip?.boat
         }
 
         // Отправляем уведомление клиенту (если есть telegram_id)
         if ((clientProfile as any)?.telegram_id) {
-          const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications')
-          await sendClientStatusNotification(bookingWithDetails, status, managerName)
+          const { sendGroupTripStatusNotification } = await import('~/server/utils/telegram-notifications')
+          await sendGroupTripStatusNotification(bookingWithDetails, status, managerName)
         }
 
         // Отправляем уведомление администраторам и менеджерам
-        const { formatStatusNotification, sendAdminNotification } = await import('~/server/utils/telegram-notifications')
-        const notificationMessage = formatStatusNotification(bookingWithDetails, status)
+        const { formatGroupTripStatusNotification, sendAdminNotification } = await import('~/server/utils/telegram-notifications')
+        const notificationMessage = formatGroupTripStatusNotification(bookingWithDetails, status)
 
         await sendAdminNotification(notificationMessage, {
           parseMode: 'HTML',
-          boatId: (updatedBooking as any).boat_id,
+          boatId: (updatedBooking as any).group_trip?.boat_id,
           event
         })
 
       } catch (notifyError) {
-        console.error('Failed to send notifications:', notifyError)
+        console.error('Failed to send group trip status notifications:', notifyError)
         // Не падаем, если уведомления не отправились
       }
     }
@@ -195,11 +207,11 @@ export default defineEventHandler(async (event) => {
     return {
       success: true,
       data: updatedBooking,
-      message: 'Booking status updated successfully'
+      message: 'Group trip booking status updated successfully'
     }
 
   } catch (error) {
-    console.error('Error in updating booking status:', error)
+    console.error('Error in updating group trip booking status:', error)
     setResponseStatus(event, 500)
     return { error: 'Internal server error', details: error }
   }
@@ -221,30 +233,17 @@ async function checkAdminAccess(supabase: any, userId: string): Promise<boolean>
   }
 }
 
-// Проверка прав менеджера конкретной лодки
+// Проверка прав менеджера
 async function checkManagerAccess(supabase: any, userId: string, boatId: string): Promise<boolean> {
   try {
-    const { data: profile } = await supabase
+    const { data } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', userId)
       .single()
 
-    // Если админ - всегда разрешаем
-    if (profile?.role === 'admin') return true
-
-    // Если пользователь с ролью manager - разрешаем все
-    if (profile?.role === 'manager') return true
-
-    // Для всех остальных ролей проверяем, назначен ли пользователь менеджером этой лодки
-    const { data: boatManager, error } = await supabase
-      .from('boat_managers')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('boat_id', boatId)
-      .single()
-
-    return !!boatManager
+    // Упрощенная проверка - менеджеры имеют доступ ко всем лодкам
+    return data?.role === 'manager'
   } catch (error) {
     console.error('Error checking manager access:', error)
     return false

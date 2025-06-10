@@ -205,23 +205,49 @@ const getBookingStatusColor = (status: string | null) => {
 
 const updateBookingStatus = async (bookingId: string, newStatus: 'confirmed' | 'completed' | 'cancelled') => {
   updatingStatus.value = bookingId
+
+  // Оптимистичное обновление
+  const backup = bookings.value.slice()
+  const index = bookings.value.findIndex(b => b.id === bookingId)
+  if (index !== -1) {
+    bookings.value[index].status = newStatus
+  }
+
   try {
-    const { error } = await supabase
-      .from('group_trip_bookings')
-      .update({ status: newStatus })
-      .eq('id', bookingId)
+    // Используем наш API endpoint для обновления статуса с уведомлениями
+    const response: any = await $fetch(`/api/group-trip-bookings/${bookingId}/status`, {
+      method: 'PATCH',
+      body: { status: newStatus }
+    })
 
-    if (error) throw error
-
-    toast.add({ title: 'Успешно', description: `Статус бронирования обновлен на ${formatBookingStatus(newStatus)}.`, color: 'success' })
-    // Обновляем локальные данные
-    const index = bookings.value.findIndex(b => b.id === bookingId)
-    if (index !== -1) {
-      bookings.value[index].status = newStatus
+    // Проверяем успешность операции
+    if (response && (response.success === true || response.data)) {
+      toast.add({
+        title: 'Успешно',
+        description: `Статус обновлен на ${formatBookingStatus(newStatus)}. Уведомления отправлены!`,
+        color: 'green' as any
+      })
+    } else {
+      // Если API вернул ошибку
+      bookings.value = backup
+      const errorMessage = response?.error || 'Не удалось обновить статус'
+      toast.add({ title: 'Ошибка', description: errorMessage, color: 'red' as any })
     }
-  } catch (err: any) {
-    console.error('Ошибка обновления статуса бронирования:', err)
-    toast.add({ title: 'Ошибка', description: 'Не удалось обновить статус.', color: 'error' })
+  } catch (error: any) {
+    console.error('Ошибка обновления статуса группового бронирования:', error)
+    bookings.value = backup
+
+    // Обработка ошибок
+    let errorMessage = 'Ошибка обновления статуса'
+    if (error.data?.error) {
+      errorMessage = error.data.error
+    } else if (error.statusCode === 401) {
+      errorMessage = 'Нет прав для изменения статуса'
+    } else if (error.statusCode === 404) {
+      errorMessage = 'Бронирование не найдено'
+    }
+
+    toast.add({ title: 'Ошибка', description: errorMessage, color: 'red' as any })
   } finally {
     updatingStatus.value = null
   }

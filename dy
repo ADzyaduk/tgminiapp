@@ -1,0 +1,5 @@
+{
+  "success": false,
+  "error": "Integration test failed",
+  "details": "Cannot destructure property 'type' of 'body' as it is undefined."
+}
