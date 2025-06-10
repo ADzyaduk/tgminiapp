@@ -1,6 +1,21 @@
 import { defineEventHandler, readBody } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
+import type { Database } from '~/types/supabase'
+
+type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row']
+
+// NOTE: The type below is enhanced to include fields that are used in the code but seem
+// to be missing from the auto-generated `types/supabase.ts`. This suggests the types file
+// might be out of sync with the actual database schema. Regenerating the types is recommended.
+type BookingWithDetails = Tables<'bookings'> & {
+  profile: (Tables<'profiles'> & { username?: string; first_name?: string; last_name?: string }) | null
+  boat: Tables<'boats'> | null
+  date?: string
+  time?: string
+  duration?: number
+  people_count?: number
+}
 
 /**
  * ВРЕМЕННЫЙ ОТЛАДОЧНЫЙ ОБРАБОТЧИК ДЛЯ ДИАГНОСТИКИ ПРОБЛЕМ С API TELEGRAM
@@ -115,7 +130,7 @@ interface BookingContext {
 }
 
 async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
-  const supabase = serverSupabaseServiceRole(event);
+  const supabase = serverSupabaseServiceRole<Database>(event);
 
   // 1. Получаем бронирование со всеми деталями
   const { data: booking, error: fetchError } = await supabase
