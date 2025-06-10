@@ -55,23 +55,31 @@ async function sendTelegramRequest(method: string, body: object) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.error(`❌ TELEGRAM_BOT_TOKEN is not set. Cannot call method '${method}'.`);
-    return;
+    return null;
   }
   const url = `https://api.telegram.org/bot${token}/${method}`;
 
   try {
+    console.log(`📡 Calling Telegram API: ${method}`, JSON.stringify(body, null, 2));
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+
+    const result = await response.json();
+
     if (!response.ok) {
-      console.error(`❌ Telegram API error for method '${method}': ${response.status} ${response.statusText}`, await response.text());
+      console.error(`❌ Telegram API error for method '${method}': ${response.status} ${response.statusText}`, result);
+      return null;
     }
-    return await response.json();
+
+    console.log(`✅ Telegram API success for method '${method}':`, result);
+    return result;
   } catch (error) {
     console.error(`❌ Network error calling Telegram API method '${method}':`, error);
-    throw error;
+    return null;
   }
 }
 
@@ -82,7 +90,10 @@ export default defineEventHandler(async (event: H3Event) => {
   try {
     const body = await readBody(event);
 
+    console.log('🔔 Webhook received:', JSON.stringify(body, null, 2));
+
     if (!body.callback_query) {
+      console.log('ℹ️ Not a callback query, ignoring');
       return { statusCode: 200, statusMessage: 'OK (not a callback query)' };
     }
 
@@ -90,12 +101,19 @@ export default defineEventHandler(async (event: H3Event) => {
     const { id: callbackQueryId, data: callbackData, message, from } = callback_query;
 
     console.log(`📱 Received callback query: ${callbackData} from user ${from.id}`);
+    console.log(`📨 Message details:`, {
+      chat_id: message?.chat?.id,
+      message_id: message?.message_id,
+      text: message?.text?.substring(0, 100)
+    });
+
+    // КРИТИЧЕСКИ ВАЖНО: Немедленно отвечаем на callback query
+    await answerCallbackQuery(callbackQueryId, '⏳ Обрабатываем...');
 
     const [bookingType, action, bookingId] = callbackData.split(':');
 
     if (!bookingType || !action || !bookingId) {
       console.error('❌ Invalid callback data format:', callbackData);
-      await answerCallbackQuery(callbackQueryId, 'Ошибка: неверный формат данных');
       return { statusCode: 400, statusMessage: 'Invalid callback_data format.' };
     }
 
@@ -113,7 +131,6 @@ export default defineEventHandler(async (event: H3Event) => {
       });
     } else {
       console.warn(`⚠️ Unsupported booking type: ${bookingType}`);
-      await answerCallbackQuery(callbackQueryId, 'Тип бронирования не поддерживается');
     }
 
     return { statusCode: 200, statusMessage: 'OK' };

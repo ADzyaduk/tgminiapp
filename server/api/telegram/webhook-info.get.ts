@@ -3,27 +3,42 @@ import { defineEventHandler } from 'h3'
 export default defineEventHandler(async (event) => {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
+
     if (!token) {
-      return { error: 'Telegram bot token not configured' }
+      return {
+        success: false,
+        error: 'TELEGRAM_BOT_TOKEN не настроен'
+      }
     }
 
+    console.log('🔍 Checking webhook info...')
+
     // Получаем информацию о webhook
-    const webhookInfoUrl = `https://api.telegram.org/bot${token}/getWebhookInfo`
-    const webhookResponse = await fetch(webhookInfoUrl)
-    const webhookInfo = await webhookResponse.json()
+    const webhookInfoResponse = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`)
+    const webhookInfo = await webhookInfoResponse.json()
 
     // Получаем информацию о боте
-    const botInfoUrl = `https://api.telegram.org/bot${token}/getMe`
-    const botResponse = await fetch(botInfoUrl)
-    const botInfo = await botResponse.json()
+    const botInfoResponse = await fetch(`https://api.telegram.org/bot${token}/getMe`)
+    const botInfo = await botInfoResponse.json()
+
+    console.log('📋 Webhook info:', JSON.stringify(webhookInfo, null, 2))
+    console.log('🤖 Bot info:', JSON.stringify(botInfo, null, 2))
 
     return {
-      bot: botInfo.result,
-      webhook: webhookInfo.result
+      success: true,
+      webhook: webhookInfo,
+      bot: botInfo,
+      env: {
+        NODE_ENV: process.env.NODE_ENV,
+        timestamp: new Date().toISOString()
+      }
     }
 
   } catch (error) {
-    console.error('Error getting webhook info:', error)
-    return { error: 'Internal server error', details: error }
+    console.error('❌ Webhook info error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
   }
 })
