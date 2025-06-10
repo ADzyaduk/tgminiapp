@@ -98,26 +98,33 @@ export default defineEventHandler(async (event) => {
 
     // Отправляем уведомления
     try {
+      console.log('🔔 Starting notifications for booking:', (booking as any).id)
+      console.log('📋 Booking data:', booking)
+
       // Получаем данные профиля и лодки для уведомлений
       let profile = null
       let boat = null
 
       if ((booking as any).user_id) {
+        console.log('👤 Getting profile for user_id:', (booking as any).user_id)
         const { data: profileData } = await supabase
           .from('profiles')
           .select('name, telegram_id, phone, email')
           .eq('id', (booking as any).user_id)
           .single()
         profile = profileData
+        console.log('👤 Profile data:', profile)
       }
 
       if ((booking as any).boat_id) {
+        console.log('🚤 Getting boat for boat_id:', (booking as any).boat_id)
         const { data: boatData } = await supabase
           .from('boats')
           .select('name')
           .eq('id', (booking as any).boat_id)
           .single()
         boat = boatData
+        console.log('🚤 Boat data:', boat)
       }
 
       // Добавляем данные в объект бронирования для уведомлений
@@ -127,10 +134,19 @@ export default defineEventHandler(async (event) => {
         boat: boat
       }
 
+      console.log('📦 Full booking with details:', bookingWithDetails)
+
       // Отправляем улучшенное уведомление менеджерам
       const enhancedMessage = formatBookingNotificationEnhanced(bookingWithDetails)
+      console.log('📝 Enhanced message created:', enhancedMessage.substring(0, 200) + '...')
 
-      await sendAdminNotification(enhancedMessage, {
+      console.log('📤 Calling sendAdminNotification with params:', {
+        boatId: (booking as any).boat_id,
+        bookingId: (booking as any).id,
+        bookingType: 'regular'
+      })
+
+      const notificationResult = await sendAdminNotification(enhancedMessage, {
         parseMode: 'HTML',
         boatId: (booking as any).boat_id,
         bookingId: (booking as any).id,
@@ -138,13 +154,19 @@ export default defineEventHandler(async (event) => {
         event
       })
 
+      console.log('📨 Notification result:', notificationResult)
+
       // Отправляем подтверждение клиенту (если есть telegram_id)
       if (profile && (profile as any).telegram_id) {
-        await sendClientBookingConfirmation(bookingWithDetails)
+        console.log('📱 Sending client confirmation to:', (profile as any).telegram_id)
+        const clientResult = await sendClientBookingConfirmation(bookingWithDetails)
+        console.log('📱 Client notification result:', clientResult)
+      } else {
+        console.log('❌ No telegram_id for client notification')
       }
 
     } catch (notifyError) {
-      console.error('Failed to send notifications:', notifyError)
+      console.error('❌ Failed to send notifications:', notifyError)
     }
 
     return {

@@ -64,6 +64,10 @@ export default defineEventHandler(async (event) => {
       fromUser: from.id
     })
 
+    console.log('📱 Full callback query:', JSON.stringify(callback_query, null, 2))
+    console.log('💬 Message content:', message.text)
+    console.log('🎯 Raw callback data:', callbackData)
+
     // Сначала отвечаем на callback query чтобы убрать "loading"
     const answerResult = await answerCallbackQuery(callbackQueryId, '🔄 Обрабатываем...')
     console.log(`📞 answerCallbackQuery result: ${answerResult}`)

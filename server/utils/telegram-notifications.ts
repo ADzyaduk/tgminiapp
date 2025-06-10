@@ -295,10 +295,40 @@ export async function sendAdminNotification(
       }
     }
 
-    // Если не удалось отправить менеджерам, логируем и завершаем
+    // Если не удалось отправить менеджерам или нет менеджеров, отправляем админу
     if (!sentToManagers) {
-      console.log(`⚠️ No managers found for boat ${boatId} or failed to send to managers`)
-      return false
+      const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID === "ваш_chat_id_для_уведомлений"
+        ? "1231157381"  // Реальный chat ID из логов
+        : (process.env.TELEGRAM_ADMIN_CHAT_ID || "1231157381")
+
+      console.log(`📤 Sending notification to admin chat ID: ${adminChatId}`)
+      console.log(`📝 Message: ${message.substring(0, 100)}...`)
+
+      const body: any = {
+        chat_id: adminChatId,
+        text: message,
+        parse_mode: parseMode
+      }
+
+      if (replyMarkup) {
+        console.log(`🔘 Adding buttons: ${JSON.stringify(replyMarkup)}`)
+        body.reply_markup = replyMarkup
+      }
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+
+      const result = response.ok
+      if (!result) {
+        const errorData = await response.json()
+        console.error(`❌ Admin notification failed:`, errorData)
+      } else {
+        console.log(`✅ Admin notification sent successfully`)
+      }
+      return result
     }
 
     return sentToManagers
