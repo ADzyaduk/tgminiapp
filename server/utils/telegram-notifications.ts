@@ -214,16 +214,23 @@ export async function sendAdminNotification(
     // Создаем инлайн кнопки для бронирований
     let replyMarkup = undefined
     if (bookingId && bookingType) {
+      const confirmData = `${bookingType}:confirm:${bookingId}`
+      const cancelData = `${bookingType}:cancel:${bookingId}`
+
+      console.log(`🔘 Creating inline buttons:`)
+      console.log(`   ✅ Confirm: ${confirmData}`)
+      console.log(`   ❌ Cancel: ${cancelData}`)
+
       replyMarkup = {
         inline_keyboard: [
           [
             {
               text: '✅ Подтвердить',
-              callback_data: `${bookingType}:confirm:${bookingId}`
+              callback_data: confirmData
             },
             {
               text: '❌ Отменить',
-              callback_data: `${bookingType}:cancel:${bookingId}`
+              callback_data: cancelData
             }
           ]
         ]

@@ -4,20 +4,38 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) return
+    if (!token) {
+      console.error('❌ TELEGRAM_BOT_TOKEN not set for answerCallbackQuery')
+      return false
+    }
 
     const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`
 
-    await fetch(url, {
+    console.log(`📞 Calling answerCallbackQuery for callback ID: ${callbackQueryId}`)
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         callback_query_id: callbackQueryId,
-        text: text || ''
+        text: text || '',
+        show_alert: false
       })
     })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }))
+      console.error('❌ answerCallbackQuery failed:', errorData)
+      return false
+    }
+
+    const result = await response.json()
+    console.log('✅ answerCallbackQuery successful:', result)
+    return true
+
   } catch (error) {
-    console.error('Error answering callback query:', error)
+    console.error('❌ Error in answerCallbackQuery:', error)
+    return false
   }
 }
 
@@ -25,8 +43,11 @@ export default defineEventHandler(async (event) => {
   try {
     const body = await readBody(event)
 
+    console.log('🔄 Received webhook update:', JSON.stringify(body, null, 2))
+
     // Проверяем наличие callback_query (нажатие кнопки)
     if (!body.callback_query) {
+      console.log('ℹ️ No callback_query in request, ignoring')
       return { status: 200 }
     }
 
@@ -35,13 +56,25 @@ export default defineEventHandler(async (event) => {
     const chatId = message.chat.id.toString()
     const messageId = message.message_id.toString()
 
+    console.log(`🔘 Button pressed:`, {
+      callbackQueryId,
+      callbackData,
+      chatId,
+      messageId,
+      fromUser: from.id
+    })
+
     // Сначала отвечаем на callback query чтобы убрать "loading"
-    await answerCallbackQuery(callbackQueryId)
+    const answerResult = await answerCallbackQuery(callbackQueryId, '🔄 Обрабатываем...')
+    console.log(`📞 answerCallbackQuery result: ${answerResult}`)
 
     // Парсим данные кнопки
     const [bookingType, action, bookingId] = callbackData.split(':')
 
+    console.log(`📝 Parsed callback data:`, { bookingType, action, bookingId })
+
     if (!['regular', 'group_trip'].includes(bookingType) || !['confirm', 'cancel'].includes(action)) {
+      console.error('❌ Invalid callback data format:', { bookingType, action, bookingId })
       await sendTelegramMessage(chatId, '❌ Неизвестная команда')
       return { status: 400 }
     }
@@ -50,12 +83,16 @@ export default defineEventHandler(async (event) => {
 
     // Проверяем права пользователя
     const userTelegramId = from.id.toString()
+    console.log(`🔐 Checking permissions for user ${userTelegramId}`)
     const hasPermission = await checkUserPermissions(supabase, userTelegramId, bookingType, bookingId)
 
     if (!hasPermission) {
+      console.log(`❌ User ${userTelegramId} has no permission for ${bookingType} booking ${bookingId}`)
       await sendTelegramMessage(chatId, '❌ У вас нет прав для управления этим бронированием')
       return { status: 403 }
     }
+
+    console.log(`✅ User ${userTelegramId} has permission, processing ${action} for ${bookingType} booking ${bookingId}`)
 
     // Обрабатываем действие
     if (bookingType === 'regular') {
@@ -67,7 +104,7 @@ export default defineEventHandler(async (event) => {
     return { status: 200 }
 
   } catch (error) {
-    console.error('Webhook error:', error)
+    console.error('❌ Webhook error:', error)
     return { status: 500 }
   }
 })
@@ -125,27 +162,59 @@ async function checkUserPermissions(supabase: any, telegramId: string, bookingTy
 // Обработка обычного бронирования
 async function handleRegularBooking(supabase: any, action: string, bookingId: string, chatId: string, messageId: string) {
   try {
-    // Получаем текущее бронирование
+    console.log(`🔍 Processing regular booking: ${bookingId}, action: ${action}`)
+
+    // Получаем текущее бронирование (без сложных foreign key)
     const { data: booking, error } = await supabase
       .from('bookings')
-      .select(`
-        *,
-        profile:profiles!bookings_user_id_fkey(name, telegram_id, phone, email),
-        boat:boats!bookings_boat_id_fkey(name)
-      `)
+      .select('*')
       .eq('id', bookingId)
       .single()
 
-    if (error || !booking) {
+    if (error) {
+      console.error('❌ Error fetching booking:', error)
+      await sendTelegramMessage(chatId, '❌ Ошибка при получении бронирования', messageId)
+      return
+    }
+
+    if (!booking) {
+      console.log('❌ Booking not found')
       await sendTelegramMessage(chatId, '❌ Бронирование не найдено', messageId)
       return
     }
 
-    // Проверяем текущий статус
-    if (booking.status !== 'pending') {
-      const statusText = booking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
-      const emoji = booking.status === 'confirmed' ? '✅' : '❌'
+    console.log('📋 Booking found:', booking)
 
+    // Получаем данные профиля отдельно
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('name, telegram_id, phone, email')
+      .eq('id', booking.user_id)
+      .single()
+
+    // Получаем данные лодки отдельно
+    const { data: boat } = await supabase
+      .from('boats')
+      .select('name')
+      .eq('id', booking.boat_id)
+      .single()
+
+    console.log('👤 Profile data:', profile)
+    console.log('🚤 Boat data:', boat)
+
+    // Создаем полный объект
+    const fullBooking = {
+      ...booking,
+      profile: profile || { name: 'Не указано', telegram_id: null },
+      boat: boat || { name: 'Не указано' }
+    }
+
+    // Проверяем текущий статус
+    if (fullBooking.status !== 'pending') {
+      const statusText = fullBooking.status === 'confirmed' ? 'уже подтверждено' : 'уже отменено'
+      const emoji = fullBooking.status === 'confirmed' ? '✅' : '❌'
+
+      console.log(`⚠️ Booking already processed: ${fullBooking.status}`)
       await sendTelegramMessage(
         chatId,
         `${emoji} Бронирование ${statusText}`,
@@ -156,26 +225,37 @@ async function handleRegularBooking(supabase: any, action: string, bookingId: st
 
     // Обновляем статус
     const newStatus = action === 'confirm' ? 'confirmed' : 'cancelled'
+    console.log(`🔄 Updating booking status from ${fullBooking.status} to ${newStatus}`)
+
     const { error: updateError } = await supabase
       .from('bookings')
       .update({ status: newStatus })
       .eq('id', bookingId)
 
     if (updateError) {
+      console.error('❌ Status update error:', updateError)
       await sendTelegramMessage(chatId, '❌ Ошибка обновления статуса', messageId)
       return
     }
 
-        // Сначала обновляем сообщение менеджера (убираем кнопки)
+    console.log('✅ Status updated successfully')
+
+    // Сначала обновляем сообщение менеджера (убираем кнопки)
     const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
     const emoji = action === 'confirm' ? '✅' : '❌'
 
+    const updatedMessage = `${emoji} <b>Бронирование ${statusText}</b>
+
+👤 <b>Клиент:</b> ${fullBooking.profile?.name || 'Не указано'}
+📅 <b>Дата:</b> ${new Date(fullBooking.start_time).toLocaleDateString('ru-RU')}
+⏰ <b>Время:</b> ${new Date(fullBooking.start_time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})} - ${new Date(fullBooking.end_time).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})}
+🚤 <b>Лодка:</b> ${fullBooking.boat?.name || 'Не указано'}
+💰 <b>Стоимость:</b> ${fullBooking.price} ₽`
+
     console.log(`🔄 Updating manager message in chat ${chatId}, message ${messageId}`)
-    const updateResult = await sendTelegramMessage(
-      chatId,
-      `${emoji} Бронирование ${statusText}\n\nКлиент: ${booking.profile?.name || 'Не указано'}\nДата: ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
-      messageId
-    )
+    console.log(`📝 New message content: ${updatedMessage}`)
+
+    const updateResult = await sendTelegramMessage(chatId, updatedMessage, messageId)
 
     if (updateResult) {
       console.log('✅ Successfully updated manager message and removed buttons')
@@ -185,14 +265,14 @@ async function handleRegularBooking(supabase: any, action: string, bookingId: st
 
     // Затем пытаемся уведомить клиента (не критично если не получится)
     console.log('🔍 Booking data:', {
-      user_id: booking.user_id,
-      profile: booking.profile,
-      telegram_id: booking.profile?.telegram_id
+      user_id: fullBooking.user_id,
+      profile: fullBooking.profile,
+      telegram_id: fullBooking.profile?.telegram_id
     })
 
-    if (booking.profile?.telegram_id) {
-      console.log(`📱 Sending notification to client: ${booking.profile.telegram_id}`)
-      await notifyClient(booking.profile.telegram_id, newStatus, booking)
+    if (fullBooking.profile?.telegram_id) {
+      console.log(`📱 Sending notification to client: ${fullBooking.profile.telegram_id}`)
+      await notifyClient(fullBooking.profile.telegram_id, newStatus, fullBooking)
     } else {
       console.log('❌ No telegram_id found for client notification')
     }
@@ -271,11 +351,18 @@ async function handleGroupTripBooking(supabase: any, action: string, bookingId: 
     const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
     const emoji = action === 'confirm' ? '✅' : '❌'
 
-    const updateResult = await sendTelegramMessage(
-      chatId,
-      `${emoji} Бронирование групповой поездки ${statusText}`,
-      messageId
-    )
+    const updatedMessage = `${emoji} <b>Групповая поездка ${statusText}</b>
+
+👤 <b>Клиент:</b> ${booking.profile?.name || 'Не указано'}
+📅 <b>Дата:</b> ${booking.group_trip?.start_date ? new Date(booking.group_trip.start_date).toLocaleDateString('ru-RU') : 'Не указано'}
+🎯 <b>Поездка:</b> ${booking.group_trip?.name || 'Не указано'}
+👥 <b>Билеты:</b> ${booking.adult_count} взр. + ${booking.child_count} дет.
+💰 <b>Стоимость:</b> ${booking.total_price} ₽`
+
+    console.log(`🔄 Updating group trip manager message in chat ${chatId}, message ${messageId}`)
+    console.log(`📝 New message content: ${updatedMessage}`)
+
+    const updateResult = await sendTelegramMessage(chatId, updatedMessage, messageId)
 
     if (updateResult) {
       console.log('✅ Successfully updated group trip manager message and removed buttons')
@@ -355,11 +442,12 @@ async function sendTelegramMessage(chatId: string, text: string, messageId?: str
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) {
-      console.error('TELEGRAM_BOT_TOKEN not set')
+      console.error('❌ TELEGRAM_BOT_TOKEN not set')
       return false
     }
 
-    const url = messageId
+    const isEdit = !!messageId
+    const url = isEdit
       ? `https://api.telegram.org/bot${token}/editMessageText`
       : `https://api.telegram.org/bot${token}/sendMessage`
 
@@ -370,10 +458,16 @@ async function sendTelegramMessage(chatId: string, text: string, messageId?: str
     }
 
     // При редактировании убираем кнопки
-    if (messageId) {
-      body.message_id = messageId
+    if (isEdit) {
+      body.message_id = parseInt(messageId)
       body.reply_markup = { inline_keyboard: [] }
+      console.log(`✏️ Editing message ${messageId} in chat ${chatId} and removing buttons`)
+    } else {
+      console.log(`📨 Sending new message to chat ${chatId}`)
     }
+
+    console.log(`🔗 URL: ${url}`)
+    console.log(`📝 Body:`, JSON.stringify(body, null, 2))
 
     const response = await fetch(url, {
       method: 'POST',
@@ -381,16 +475,37 @@ async function sendTelegramMessage(chatId: string, text: string, messageId?: str
       body: JSON.stringify(body)
     })
 
+    const responseText = await response.text()
+    console.log(`📊 Response status: ${response.status}`)
+    console.log(`📊 Response text: ${responseText}`)
+
     if (!response.ok) {
-      const errorData = await response.json()
-      console.error('Telegram API error:', errorData)
+      try {
+        const errorData = JSON.parse(responseText)
+        console.error('❌ Telegram API error:', errorData)
+
+        // Проверяем специфичные ошибки
+        if (errorData.error_code === 400 && errorData.description?.includes('message is not modified')) {
+          console.log('ℹ️ Message content is the same, this is expected when just removing buttons')
+          return true
+        }
+      } catch (parseError) {
+        console.error('❌ Failed to parse error response:', responseText)
+      }
       return false
+    }
+
+    try {
+      const result = JSON.parse(responseText)
+      console.log('✅ Telegram API success:', result)
+    } catch (parseError) {
+      console.log('✅ Telegram API success (raw response):', responseText)
     }
 
     return true
 
   } catch (error) {
-    console.error('Send message error:', error)
+    console.error('❌ Send message error:', error)
     return false
   }
 }
