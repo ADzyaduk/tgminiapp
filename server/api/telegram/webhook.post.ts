@@ -128,7 +128,11 @@ async function handleRegularBooking(supabase: any, action: string, bookingId: st
     // Получаем текущее бронирование
     const { data: booking, error } = await supabase
       .from('bookings')
-      .select('*, profile:user_id(name, telegram_id), boat:boat_id(name)')
+      .select(`
+        *,
+        profile:profiles!bookings_user_id_fkey(name, telegram_id, phone, email),
+        boat:boats!bookings_boat_id_fkey(name)
+      `)
       .eq('id', bookingId)
       .single()
 
@@ -163,19 +167,35 @@ async function handleRegularBooking(supabase: any, action: string, bookingId: st
     }
 
     // Уведомляем клиента (упрощенно)
+    console.log('🔍 Booking data:', {
+      user_id: booking.user_id,
+      profile: booking.profile,
+      telegram_id: booking.profile?.telegram_id
+    })
+
     if (booking.profile?.telegram_id) {
+      console.log(`📱 Sending notification to client: ${booking.profile.telegram_id}`)
       await notifyClient(booking.profile.telegram_id, newStatus, booking)
+    } else {
+      console.log('❌ No telegram_id found for client notification')
     }
 
     // Обновляем сообщение менеджера
     const statusText = action === 'confirm' ? 'подтверждено' : 'отменено'
     const emoji = action === 'confirm' ? '✅' : '❌'
 
-    await sendTelegramMessage(
+    console.log(`🔄 Updating manager message in chat ${chatId}, message ${messageId}`)
+    const updateResult = await sendTelegramMessage(
       chatId,
       `${emoji} Бронирование ${statusText}\n\nКлиент: ${booking.profile?.name || 'Не указано'}\nДата: ${new Date(booking.start_time).toLocaleDateString('ru-RU')}`,
       messageId
     )
+
+    if (updateResult) {
+      console.log('✅ Successfully updated manager message and removed buttons')
+    } else {
+      console.log('❌ Failed to update manager message')
+    }
 
   } catch (error) {
     console.error('Regular booking error:', error)
@@ -189,7 +209,11 @@ async function handleGroupTripBooking(supabase: any, action: string, bookingId: 
     // Получаем бронирование
     const { data: booking, error } = await supabase
       .from('group_trip_bookings')
-      .select('*, group_trip:group_trips(boat_id, start_date)')
+      .select(`
+        *,
+        group_trip:group_trips(boat_id, start_date, name),
+        profile:profiles!group_trip_bookings_user_id_fkey(name, telegram_id, phone, email)
+      `)
       .eq('id', bookingId)
       .single()
 
@@ -244,16 +268,17 @@ async function handleGroupTripBooking(supabase: any, action: string, bookingId: 
     }
 
     // Уведомляем клиента (если есть профиль)
-    if (booking.user_id) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('telegram_id')
-        .eq('id', booking.user_id)
-        .single()
+    console.log('🔍 Group booking data:', {
+      user_id: booking.user_id,
+      profile: booking.profile,
+      telegram_id: booking.profile?.telegram_id
+    })
 
-      if (profile?.telegram_id) {
-        await notifyGroupTripClient(profile.telegram_id, newStatus, booking)
-      }
+    if (booking.profile?.telegram_id) {
+      console.log(`📱 Sending group trip notification to client: ${booking.profile.telegram_id}`)
+      await notifyGroupTripClient(booking.profile.telegram_id, newStatus, booking)
+    } else {
+      console.log('❌ No telegram_id found for group trip client notification')
     }
 
     // Обновляем сообщение менеджера
@@ -275,6 +300,8 @@ async function handleGroupTripBooking(supabase: any, action: string, bookingId: 
 // Упрощенное уведомление клиента
 async function notifyClient(telegramId: string, status: string, booking: any) {
   try {
+    console.log(`📤 Attempting to notify client ${telegramId} about status ${status}`)
+
     const emoji = status === 'confirmed' ? '✅' : '❌'
     const statusText = status === 'confirmed' ? 'подтверждено' : 'отменено'
 
@@ -287,9 +314,14 @@ async function notifyClient(telegramId: string, status: string, booking: any) {
 🚤 <b>Лодка:</b> ${booking.boat?.name || 'Не указано'}
 💰 <b>Стоимость:</b> ${booking.price} ₽`
 
-    await sendTelegramMessage(telegramId, message)
+    const result = await sendTelegramMessage(telegramId, message)
+    if (result) {
+      console.log(`✅ Successfully notified client ${telegramId}`)
+    } else {
+      console.log(`❌ Failed to notify client ${telegramId}`)
+    }
   } catch (error) {
-    console.error('Client notification error:', error)
+    console.error(`❌ Client notification error for ${telegramId}:`, error)
   }
 }
 
@@ -313,12 +345,12 @@ async function notifyGroupTripClient(telegramId: string, status: string, booking
 }
 
 // Отправка Telegram сообщения (упрощенная)
-async function sendTelegramMessage(chatId: string, text: string, messageId?: string) {
+async function sendTelegramMessage(chatId: string, text: string, messageId?: string): Promise<boolean> {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) {
       console.error('TELEGRAM_BOT_TOKEN not set')
-      return
+      return false
     }
 
     const url = messageId
@@ -346,9 +378,13 @@ async function sendTelegramMessage(chatId: string, text: string, messageId?: str
     if (!response.ok) {
       const errorData = await response.json()
       console.error('Telegram API error:', errorData)
+      return false
     }
+
+    return true
 
   } catch (error) {
     console.error('Send message error:', error)
+    return false
   }
 }
