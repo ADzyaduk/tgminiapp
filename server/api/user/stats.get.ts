@@ -1,5 +1,5 @@
 import { defineEventHandler, getCookie, setResponseStatus } from 'h3'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseClient } from '#supabase/server'
 import jwt from 'jsonwebtoken'
 
 interface JWTPayload {
@@ -44,26 +44,30 @@ export default defineEventHandler(async (event) => {
       return { success: false, error: 'Invalid token' }
     }
 
-    const supabase = serverSupabaseServiceRole(event)
+    // Подключаемся к Supabase с обычным client (пользователь уже аутентифицирован через JWT)
+    const supabase = await serverSupabaseClient(event)
+    const userId = tokenPayload.id
 
     // Получаем статистику по обычным бронированиям
     const { data: bookingStats, error: bookingError } = await supabase
       .from('bookings')
       .select('id, price, status')
-      .eq('user_id', tokenPayload.id)
+      .eq('user_id', userId)
 
     if (bookingError) {
       console.error('❌ Error getting booking stats:', bookingError)
+      // Продолжаем работу, но возвращаем пустую статистику при ошибке
     }
 
     // Получаем статистику по групповым турам
     const { data: groupStats, error: groupError } = await supabase
       .from('group_trip_bookings')
       .select('id, total_price, status')
-      .eq('user_id', tokenPayload.id)
+      .eq('user_id', userId)
 
     if (groupError) {
       console.error('❌ Error getting group stats:', groupError)
+      // Продолжаем работу, но возвращаем пустую статистику при ошибке
     }
 
     // Вычисляем статистику
@@ -89,7 +93,7 @@ export default defineEventHandler(async (event) => {
       const { data: monthlyBookings } = await supabase
         .from('bookings')
         .select('id, price')
-        .eq('user_id', tokenPayload.id)
+        .eq('user_id', userId)
         .gte('created_at', startOfMonth.toISOString())
 
       const monthlyData = (monthlyBookings || []) as BookingStat[]

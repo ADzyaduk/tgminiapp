@@ -1,7 +1,7 @@
 import { defineEventHandler, readBody, setCookie, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
-import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
+import { generateTokens } from '~/server/utils/jwt'
 
 interface TelegramUser {
   id: number
@@ -66,7 +66,17 @@ export default defineEventHandler(async (event) => {
     }
 
     // Генерируем JWT токены
-    const tokens = generateTokens(user, config)
+    const tokens = generateTokens(
+      {
+        id: user.id,
+        telegram_id: user.telegram_id,
+        role: user.role
+      },
+      {
+        jwtSecret: config.jwtSecret,
+        jwtRefreshSecret: config.jwtRefreshSecret
+      }
+    )
 
     // Устанавливаем токены в cookies
     setCookies(event, tokens)
@@ -208,35 +218,7 @@ async function findOrCreateUser(supabase: any, telegramUser: TelegramUser) {
   }
 }
 
-// Генерация JWT токенов
-function generateTokens(user: any, config: any) {
-  const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-  const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
-
-  const accessToken = jwt.sign(
-    {
-      id: user.id,
-      telegram_id: user.telegram_id,
-      role: user.role,
-      type: 'access'
-    },
-    jwtSecret,
-    { expiresIn: '15m' }
-  )
-
-  const refreshToken = jwt.sign(
-    {
-      id: user.id,
-      telegram_id: user.telegram_id,
-      role: user.role,
-      type: 'refresh'
-    },
-    jwtRefreshSecret,
-    { expiresIn: '7d' }
-  )
-
-  return { accessToken, refreshToken }
-}
+// Функция generateTokens теперь импортируется из server/utils/jwt.ts
 
 // Установка cookies
 function setCookies(event: any, tokens: { accessToken: string; refreshToken: string }) {

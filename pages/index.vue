@@ -186,6 +186,15 @@ const filteredBoats = computed(() =>
 // Загрузка лодок
 async function fetchBoats() {
   try {
+    const config = useRuntimeConfig()
+    
+    // Проверяем наличие конфигурации Supabase
+    if (!config.public.supabaseUrl || !config.public.supabaseAnonKey) {
+      errorMessage.value = 'Supabase не настроен. Пожалуйста, настройте переменные окружения SUPABASE_URL и SUPABASE_KEY в файле .env'
+      boats.value = []
+      return
+    }
+    
     // Запрос лодок с данными об отзывах
     const { data, error } = await supabaseClient
       .from('boats')

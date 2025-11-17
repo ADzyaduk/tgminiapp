@@ -5,6 +5,8 @@ export default defineAppConfig({
       // Make sure heroicons are properly configured
       dynamic: true // Enable dynamic icon loading for all icons
     },
+    // Отключаем загрузку шрифтов из fontshare
+    fonts: false,
     // Explicitly register UI components to fix missing component issues
     primary: 'blue',
     gray: 'slate',

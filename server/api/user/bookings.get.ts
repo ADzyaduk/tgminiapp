@@ -1,5 +1,5 @@
 import { defineEventHandler, getCookie, setResponseStatus } from 'h3'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseClient } from '#supabase/server'
 import jwt from 'jsonwebtoken'
 
 interface JWTPayload {
@@ -57,33 +57,27 @@ export default defineEventHandler(async (event) => {
       return { error: 'Unauthorized - authentication failed' }
     }
 
-    // Подключаемся к Supabase
-    const supabase = serverSupabaseServiceRole(event)
+    // Подключаемся к Supabase с обычным client (пользователь уже аутентифицирован через JWT)
+    const supabase = await serverSupabaseClient(event)
 
-    // Получаем пользователя из базы данных
-    const { data: user, error: userError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', tokenPayload.id)
-      .single()
-
-    if (userError || !user) {
-      console.error('User not found in database:', userError)
-      setResponseStatus(event, 401)
-      return { error: 'User not found' }
-    }
+    // Используем user_id из токена напрямую, так как пользователь уже аутентифицирован
+    const userId = tokenPayload.id
 
     // Получаем бронирования пользователя (обычные бронирования)
     const { data: regularBookings, error: regularError } = await supabase
       .from('bookings')
       .select('*, boat:boat_id(name)')
-      .eq('user_id', (user as any).id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
     if (regularError) {
       console.error('Error fetching regular bookings:', regularError)
       setResponseStatus(event, 500)
-      return { error: 'Failed to fetch regular bookings', details: regularError }
+      return { 
+        success: false,
+        error: 'Failed to fetch regular bookings', 
+        details: regularError.message || 'Unknown error'
+      }
     }
 
     // Получаем бронирования групповых поездок
@@ -98,13 +92,17 @@ export default defineEventHandler(async (event) => {
           boat:boats(name)
         )
       `)
-      .eq('user_id', (user as any).id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
     if (groupError) {
       console.error('Error fetching group bookings:', groupError)
       setResponseStatus(event, 500)
-      return { error: 'Failed to fetch group bookings', details: groupError }
+      return { 
+        success: false,
+        error: 'Failed to fetch group bookings', 
+        details: groupError.message || 'Unknown error'
+      }
     }
 
     // Форматируем бронирования для унифицированного отображения

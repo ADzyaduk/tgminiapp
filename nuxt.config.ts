@@ -10,6 +10,12 @@ export default defineNuxtConfig({
     '@nuxtjs/supabase',
   ],
 
+  // Настройки Nuxt UI
+  ui: {
+    // Отключаем загрузку шрифтов из fontshare
+    fonts: false
+  },
+
   // Стили
   css: ['~/assets/css/main.css'],
 
@@ -49,6 +55,7 @@ export default defineNuxtConfig({
     jwtSecret: process.env.JWT_SECRET,
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+    supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
 
     public: {
       supabaseUrl: process.env.SUPABASE_URL,

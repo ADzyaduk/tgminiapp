@@ -15,27 +15,27 @@
     "test:ngrok": "echo '🚀 Запустите в отдельном терминале: ngrok http 3000' && npm run dev"
   },
   "dependencies": {
-    "@nuxt/ui": "^3.0.2",
-    "@nuxtjs/supabase": "^1.5.0",
+    "@nuxt/ui": "^3.3.7",
+    "@nuxtjs/supabase": "^1.6.2",
     "@pinia/nuxt": "^0.11.0",
-    "@supabase/supabase-js": "^2.49.8",
-    "@types/jsonwebtoken": "^9.0.9",
+    "@supabase/supabase-js": "^2.81.1",
+    "@types/jsonwebtoken": "^9.0.10",
     "cookie-es": "^2.0.0",
     "crypto-js": "^4.1.1",
     "date-fns": "^4.1.0",
-    "dayjs": "^1.11.13",
+    "dayjs": "^1.11.19",
     "gsap": "^3.13.0",
     "jsonwebtoken": "^9.0.2",
     "nuxt": "^3.16.2",
-    "pinia": "^3.0.2",
+    "pinia": "^3.0.4",
     "vue": "^3.5.13",
     "vue-i18n": "^12.0.0-alpha.2",
     "vue-router": "^4.5.0",
-    "yup": "^1.6.1"
+    "yup": "^1.7.1"
   },
   "devDependencies": {
-    "@iconify-json/heroicons": "^1.2.2",
-    "@iconify-json/lucide": "^1.2.42",
-    "@types/lodash": "^4.17.16"
+    "@iconify-json/heroicons": "^1.2.3",
+    "@iconify-json/lucide": "^1.2.73",
+    "@types/lodash": "^4.17.20"
   }
 }
