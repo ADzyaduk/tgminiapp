@@ -5,7 +5,7 @@ module.exports = {
       port: '3000',
       exec_mode: 'cluster',
       instances: 'max', // Или укажите конкретное число, например 2
-      script: './server/index.mjs',
+      script: './.output/server/index.mjs',
       args: 'start',
       env: {
         NODE_ENV: 'production',
