@@ -1,55 +1,34 @@
-# Многослойная сборка для оптимизации размера образа
-# Используем node:20 вместо node:20-alpine для совместимости с native bindings
-FROM node:20 AS base
+# Build Stage 1
 
-# Устанавливаем зависимости только для production
-FROM base AS deps
+FROM node:22-alpine AS build
 WORKDIR /app
 
-# Копируем файлы зависимостей
-COPY package*.json ./
-# Используем --omit=dev вместо --only=production (более новый синтаксис)
-# И устанавливаем optional dependencies для native bindings
-RUN npm ci --omit=dev --include=optional && npm cache clean --force
+RUN corepack enable
 
-# Сборка приложения
-FROM base AS builder
+# Copy package.json and your lockfile, here we add pnpm-lock.yaml for illustration
+COPY package.json pnpm-lock.yaml .npmrc ./
+
+# Install dependencies
+RUN pnpm i
+
+# Copy the entire project
+COPY . ./
+
+# Build the project
+RUN pnpm run build
+
+# Build Stage 2
+
+FROM node:22-alpine
 WORKDIR /app
 
-# Копируем файлы зависимостей
-COPY package*.json ./
-# Устанавливаем все зависимости включая optional для native bindings
-RUN npm ci --include=optional
+# Only `.output` folder is needed from the build stage
+COPY --from=build /app/.output/ ./
 
-# Копируем исходный код
-COPY . .
+# Change the port and host
+ENV PORT=80
+ENV HOST=0.0.0.0
 
-# Собираем приложение
-RUN npm run build
+EXPOSE 80
 
-# Production образ
-FROM base AS runner
-WORKDIR /app
-
-ENV NODE_ENV=production
-# PORT будет установлен Amvera через переменную окружения
-# По умолчанию используем 3000, но Amvera может установить свой порт
-ENV PORT=3000
-
-# Копируем зависимости из deps
-COPY --from=deps /app/node_modules ./node_modules
-
-# Копируем собранное приложение из builder
-COPY --from=builder /app/.output ./.output
-COPY --from=builder /app/package.json ./package.json
-
-# Проверяем, что файлы на месте (для диагностики)
-RUN ls -la .output/server/ || echo "ERROR: .output/server not found" && \
-    test -f .output/server/index.mjs || echo "ERROR: index.mjs not found"
-
-# Открываем порт
-EXPOSE 3000
-
-# Запускаем приложение
-# Используем exec form для правильной обработки сигналов
-CMD ["node", ".output/server/index.mjs"]
+CMD ["node", "/app/server/index.mjs"]
