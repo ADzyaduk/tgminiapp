@@ -6,11 +6,10 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-05-05',
 
   // Важные модули
-  // Временно отключаем @nuxtjs/supabase, чтобы использовать свой composable
   modules: [
     '@nuxt/ui',
     '@pinia/nuxt',
-    // '@nuxtjs/supabase', // Временно отключен - используем свой composable
+    '@nuxtjs/supabase',
   ],
 
   // Настройки Nuxt UI
@@ -53,8 +52,25 @@ export default defineNuxtConfig({
     },
   },
 
-  // Модуль @nuxtjs/supabase временно отключен
-  // Используем свой composable useSupabaseClient, который читает переменные из runtimeConfig
+  // Настройки Supabase модуля
+  // Модуль автоматически использует SUPABASE_URL и SUPABASE_KEY из process.env
+  // При SSR переменные доступны во время выполнения на сервере
+  supabase: {
+    redirect: false,
+    cookieOptions: {
+      maxAge: 60 * 60 * 24 * 7, // 7 дней
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    },
+    clientOptions: {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: true,
+        persistSession: true,
+        autoRefreshToken: true,
+      }
+    }
+  },
 
   // Настройки Vite
   vite: {
@@ -67,13 +83,6 @@ export default defineNuxtConfig({
       fs: {
         strict: false
       }
-    }
-  },
-
-  // Nitro alias для совместимости с модулем @nuxtjs/supabase
-  nitro: {
-    alias: {
-      '#supabase/server': '~/server/utils/supabase'
     }
   },
 
