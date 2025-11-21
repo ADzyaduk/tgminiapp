@@ -6,10 +6,11 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-05-05',
 
   // Важные модули
+  // Временно отключаем @nuxtjs/supabase, чтобы использовать свой composable
   modules: [
     '@nuxt/ui',
     '@pinia/nuxt',
-    '@nuxtjs/supabase',
+    // '@nuxtjs/supabase', // Временно отключен - используем свой composable
   ],
 
   // Настройки Nuxt UI
@@ -52,25 +53,8 @@ export default defineNuxtConfig({
     },
   },
 
-  // Настройки Supabase
-  // Явно указываем переменные из runtimeConfig для надежности
-  // Модуль будет использовать эти значения, если они доступны
-  supabase: {
-    redirect: false,
-    cookieOptions: {
-      maxAge: 60 * 60 * 24 * 7, // 7 дней
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-    },
-    clientOptions: {
-      auth: {
-        flowType: 'pkce',
-        detectSessionInUrl: true,
-        persistSession: true,
-        autoRefreshToken: true,
-      }
-    }
-  },
+  // Модуль @nuxtjs/supabase временно отключен
+  // Используем свой composable useSupabaseClient, который читает переменные из runtimeConfig
 
   // Настройки Vite
   vite: {
@@ -86,25 +70,11 @@ export default defineNuxtConfig({
     }
   },
 
-  // Nitro hooks для установки переменных окружения до инициализации модулей
+  // Nitro alias для совместимости с модулем @nuxtjs/supabase
   nitro: {
-    hooks: {
-      'nitro:init'(nitro: any) {
-        // Устанавливаем переменные из runtimeConfig в process.env
-        // Это выполняется при инициализации Nitro, до загрузки модулей
-        const config = nitro.options.runtimeConfig
-        
-        if (config?.public?.supabaseUrl && !process.env.SUPABASE_URL) {
-          process.env.SUPABASE_URL = config.public.supabaseUrl
-        }
-        
-        if (config?.public?.supabaseAnonKey) {
-          if (!process.env.SUPABASE_KEY && !process.env.SUPABASE_ANON_KEY) {
-            process.env.SUPABASE_KEY = config.public.supabaseAnonKey
-            process.env.SUPABASE_ANON_KEY = config.public.supabaseAnonKey
-          }
-        }
-      }
-    } as any
-  }
+    alias: {
+      '#supabase/server': '~/server/utils/supabase'
+    }
+  },
+
 })
