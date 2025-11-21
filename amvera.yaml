@@ -2,6 +2,15 @@ meta:
   environment: docker
   toolchain:
     name: docker
-build: {}
+build:
+  args:
+    - SUPABASE_URL
+    - SUPABASE_KEY
+    - SUPABASE_ANON_KEY
+    - SUPABASE_SERVICE_KEY
+    - TELEGRAM_BOT_TOKEN
+    - JWT_SECRET
+    - JWT_REFRESH_SECRET
+    - DISABLE_REALTIME
 run:
   containerPort: 80

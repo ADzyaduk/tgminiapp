@@ -41,18 +41,19 @@ export default defineNuxtConfig({
 
     // Публичные переменные (доступны на клиенте и сервере)
     public: {
+      // Поддерживаем оба варианта имен переменных для Supabase
       supabaseUrl: process.env.SUPABASE_URL || '',
-      supabaseAnonKey: process.env.SUPABASE_KEY || '',
+      supabaseAnonKey: process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '',
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
       disableRealtime: process.env.DISABLE_REALTIME || 'false',
       isTelegramDevMode: process.env.NODE_ENV === 'development'
     },
   },
 
-  // Настройки Supabase - используем runtimeConfig для доступа к переменным
+  // Настройки Supabase
+  // Модуль автоматически использует SUPABASE_URL и SUPABASE_KEY (или SUPABASE_ANON_KEY) из process.env
+  // Также может использовать runtimeConfig.public.supabaseUrl и runtimeConfig.public.supabaseAnonKey
   supabase: {
-    // Модуль автоматически использует runtimeConfig.public.supabaseUrl и runtimeConfig.public.supabaseAnonKey
-    // Но можно явно указать через функции для надежности
     redirect: false,
     cookieOptions: {
       maxAge: 60 * 60 * 24 * 7, // 7 дней
