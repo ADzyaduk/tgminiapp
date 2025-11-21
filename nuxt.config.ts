@@ -53,8 +53,8 @@ export default defineNuxtConfig({
   },
 
   // Настройки Supabase
-  // При SSR модуль использует переменные из process.env (доступны во время выполнения)
-  // или из runtimeConfig.public (который также использует process.env)
+  // Явно указываем переменные из runtimeConfig для надежности
+  // Модуль будет использовать эти значения, если они доступны
   supabase: {
     redirect: false,
     cookieOptions: {
