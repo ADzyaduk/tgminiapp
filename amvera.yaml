@@ -1,8 +1,7 @@
 meta:
-  environment: node
+  environment: docker
   toolchain:
-    name: browser
-    version: 20
-build:
-  artifacts:
-    dist/*: /
+    name: docker
+build: {}
+run:
+  containerPort: 3000
