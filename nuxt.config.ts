@@ -33,7 +33,9 @@ export default defineNuxtConfig({
     }
   },
 
-  // Переменные окружения - сначала определяем runtimeConfig
+  // Переменные окружения
+  // В production runtimeConfig подхватывает только переменные с префиксом NUXT_PUBLIC_
+  // Модуль @nuxtjs/supabase ищет SUPABASE_URL и SUPABASE_KEY напрямую в process.env
   runtimeConfig: {
     // Серверные секреты (доступны только на сервере)
     jwtSecret: process.env.JWT_SECRET,
@@ -42,12 +44,12 @@ export default defineNuxtConfig({
     supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
 
     // Публичные переменные (доступны на клиенте и сервере)
+    // Используем префикс NUXT_PUBLIC_ для production
     public: {
-      // Поддерживаем оба варианта имен переменных для Supabase
-      supabaseUrl: process.env.SUPABASE_URL || '',
-      supabaseAnonKey: process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '',
-      telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
-      disableRealtime: process.env.DISABLE_REALTIME || 'false',
+      supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+      supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_KEY || process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || '',
+      telegramBotToken: process.env.NUXT_PUBLIC_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '',
+      disableRealtime: process.env.NUXT_PUBLIC_DISABLE_REALTIME || process.env.DISABLE_REALTIME || 'false',
       isTelegramDevMode: process.env.NODE_ENV === 'development'
     },
   },
