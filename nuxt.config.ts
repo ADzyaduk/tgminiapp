@@ -1,6 +1,8 @@
 export default defineNuxtConfig({
   // Базовые настройки
-  ssr: false, // Отключаем SSR для упрощения
+  // SSR включен - переменные окружения будут доступны на сервере через runtimeConfig
+  // Это решает проблему с переменными окружения в Amvera Cloud
+  ssr: true,
   compatibilityDate: '2025-05-05',
 
   // Важные модули
@@ -51,8 +53,8 @@ export default defineNuxtConfig({
   },
 
   // Настройки Supabase
-  // Модуль автоматически использует SUPABASE_URL и SUPABASE_KEY (или SUPABASE_ANON_KEY) из process.env
-  // Также может использовать runtimeConfig.public.supabaseUrl и runtimeConfig.public.supabaseAnonKey
+  // При SSR модуль использует переменные из process.env (доступны во время выполнения)
+  // или из runtimeConfig.public (который также использует process.env)
   supabase: {
     redirect: false,
     cookieOptions: {
@@ -81,13 +83,6 @@ export default defineNuxtConfig({
       fs: {
         strict: false
       }
-    },
-    // Определяем переменные окружения для клиентской части
-    // Это необходимо для ssr: false, чтобы переменные были доступны во время сборки
-    define: {
-      'process.env.SUPABASE_URL': JSON.stringify(process.env.SUPABASE_URL || ''),
-      'process.env.SUPABASE_KEY': JSON.stringify(process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || ''),
-      'process.env.SUPABASE_ANON_KEY': JSON.stringify(process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '')
     }
   }
 })
