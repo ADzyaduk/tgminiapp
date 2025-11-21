@@ -36,23 +36,20 @@ ENV NODE_ENV=production
 # По умолчанию используем 3000, но Amvera может установить свой порт
 ENV PORT=3000
 
-# Создаем непривилегированного пользователя
-# Используем группу nodejs, которая уже может существовать в образе
-RUN groupadd -r nodejs 2>/dev/null || true && \
-    useradd -r -g nodejs -u 1001 nuxtjs 2>/dev/null || true
-
 # Копируем зависимости из deps
-COPY --from=deps --chown=nuxtjs:nodejs /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules ./node_modules
 
 # Копируем собранное приложение из builder
-COPY --from=builder --chown=nuxtjs:nodejs /app/.output ./.output
-COPY --from=builder --chown=nuxtjs:nodejs /app/package.json ./package.json
+COPY --from=builder /app/.output ./.output
+COPY --from=builder /app/package.json ./package.json
 
-# Переключаемся на непривилегированного пользователя
-USER nuxtjs
+# Проверяем, что файлы на месте (для диагностики)
+RUN ls -la .output/server/ || echo "ERROR: .output/server not found" && \
+    test -f .output/server/index.mjs || echo "ERROR: index.mjs not found"
 
 # Открываем порт
 EXPOSE 3000
 
 # Запускаем приложение
+# Используем exec form для правильной обработки сигналов
 CMD ["node", ".output/server/index.mjs"]
