@@ -12,28 +12,32 @@ RUN npm ci --include=optional
 # Copy the entire project
 COPY . ./
 
+# Устанавливаем NODE_ENV для сборки
+ENV NODE_ENV=production
+
 # ARG для переменных окружения во время сборки
-# Эти переменные нужны для компиляции клиентского кода при ssr: false
-ARG SUPABASE_URL
-ARG SUPABASE_KEY
-ARG SUPABASE_ANON_KEY
-ARG SUPABASE_SERVICE_KEY
-ARG TELEGRAM_BOT_TOKEN
-ARG JWT_SECRET
-ARG JWT_REFRESH_SECRET
-ARG DISABLE_REALTIME
+# Делаем их опциональными с пустыми значениями по умолчанию
+# Это позволяет сборке пройти даже если переменные не переданы
+# Amvera Cloud должен автоматически передавать environment variables как build args
+ARG SUPABASE_URL=
+ARG SUPABASE_KEY=
+ARG SUPABASE_ANON_KEY=
+ARG SUPABASE_SERVICE_KEY=
+ARG TELEGRAM_BOT_TOKEN=
+ARG JWT_SECRET=
+ARG JWT_REFRESH_SECRET=
+ARG DISABLE_REALTIME=false
 
 # Устанавливаем переменные окружения для сборки
-# Поддерживаем оба варианта имен для Supabase ключа
+# Если они не переданы, будут пустыми строками, но сборка пройдет
 ENV SUPABASE_URL=${SUPABASE_URL}
 ENV SUPABASE_KEY=${SUPABASE_KEY}
-ENV SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-${SUPABASE_KEY}}
+ENV SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
 ENV SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
 ENV TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 ENV JWT_SECRET=${JWT_SECRET}
 ENV JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
 ENV DISABLE_REALTIME=${DISABLE_REALTIME}
-ENV NODE_ENV=production
 
 # Build the project
 RUN npm run build
