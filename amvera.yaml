@@ -4,4 +4,4 @@ meta:
     name: docker
 build: {}
 run:
-  containerPort: 3000
+  containerPort: 80
