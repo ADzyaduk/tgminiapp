@@ -36,6 +36,13 @@ ENV PORT=80
 ENV HOST=0.0.0.0
 ENV NODE_ENV=production
 
+# Переменные окружения будут установлены Amvera через панель управления
+# Но можно также использовать ARG для передачи во время сборки (опционально)
+# ARG SUPABASE_URL
+# ARG SUPABASE_KEY
+# ENV SUPABASE_URL=${SUPABASE_URL}
+# ENV SUPABASE_KEY=${SUPABASE_KEY}
+
 EXPOSE 80
 
 CMD ["node", ".output/server/index.mjs"]

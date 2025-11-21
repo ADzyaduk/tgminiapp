@@ -31,10 +31,28 @@ export default defineNuxtConfig({
     }
   },
 
-  // Настройки Supabase - явно указываем переменные окружения
+  // Переменные окружения - сначала определяем runtimeConfig
+  runtimeConfig: {
+    // Серверные секреты (доступны только на сервере)
+    jwtSecret: process.env.JWT_SECRET,
+    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
+    supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
+
+    // Публичные переменные (доступны на клиенте и сервере)
+    public: {
+      supabaseUrl: process.env.SUPABASE_URL || '',
+      supabaseAnonKey: process.env.SUPABASE_KEY || '',
+      telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+      disableRealtime: process.env.DISABLE_REALTIME || 'false',
+      isTelegramDevMode: process.env.NODE_ENV === 'development'
+    },
+  },
+
+  // Настройки Supabase - используем runtimeConfig для доступа к переменным
   supabase: {
-    url: process.env.SUPABASE_URL,
-    key: process.env.SUPABASE_KEY,
+    // Модуль автоматически использует runtimeConfig.public.supabaseUrl и runtimeConfig.public.supabaseAnonKey
+    // Но можно явно указать через функции для надежности
     redirect: false,
     cookieOptions: {
       maxAge: 60 * 60 * 24 * 7, // 7 дней
@@ -49,23 +67,6 @@ export default defineNuxtConfig({
         autoRefreshToken: true,
       }
     }
-  },
-
-  // Переменные окружения
-  runtimeConfig: {
-    // Серверные секреты
-    jwtSecret: process.env.JWT_SECRET,
-    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
-    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
-    supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
-
-    public: {
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseAnonKey: process.env.SUPABASE_KEY,
-      telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
-      disableRealtime: process.env.DISABLE_REALTIME || 'false',
-      isTelegramDevMode: process.env.NODE_ENV === 'development'
-    },
   },
 
   // Настройки Vite
