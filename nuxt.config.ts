@@ -34,14 +34,15 @@ export default defineNuxtConfig({
   },
 
   // Переменные окружения
-  // В production runtimeConfig подхватывает только переменные с префиксом NUXT_PUBLIC_
-  // Модуль @nuxtjs/supabase ищет SUPABASE_URL и SUPABASE_KEY напрямую в process.env
+  // В production runtimeConfig подхватывает только переменные с префиксом NUXT_ (серверные) или NUXT_PUBLIC_ (публичные)
+  // Модуль @nuxtjs/supabase ищет переменные напрямую в process.env во время выполнения
   runtimeConfig: {
     // Серверные секреты (доступны только на сервере)
-    jwtSecret: process.env.JWT_SECRET,
-    jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
-    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
-    supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
+    // Используем префикс NUXT_ для серверных переменных в production
+    jwtSecret: process.env.NUXT_JWT_SECRET || process.env.JWT_SECRET,
+    jwtRefreshSecret: process.env.NUXT_JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET,
+    telegramBotToken: process.env.NUXT_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN,
+    supabaseServiceKey: process.env.NUXT_SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_KEY,
 
     // Публичные переменные (доступны на клиенте и сервере)
     // Используем префикс NUXT_PUBLIC_ для production
@@ -56,9 +57,12 @@ export default defineNuxtConfig({
 
   // Настройки Supabase модуля
   // Модуль автоматически использует SUPABASE_URL и SUPABASE_KEY из process.env
-  // При SSR переменные доступны во время выполнения на сервере
+  // SUPABASE_SERVICE_KEY используется для serverSupabaseServiceRole
+  // В production переменные доступны через process.env во время выполнения
   supabase: {
     redirect: false,
+    // serviceKey: модуль автоматически ищет SUPABASE_SERVICE_KEY в process.env
+    // НЕ используем NUXT_PUBLIC_ для service key - это серверный секрет!
     cookieOptions: {
       maxAge: 60 * 60 * 24 * 7, // 7 дней
       sameSite: 'lax',

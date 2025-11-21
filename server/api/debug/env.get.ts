@@ -34,6 +34,7 @@ export default defineEventHandler((event) => {
     conclusion: {
       telegramWorks: !!process.env.TELEGRAM_BOT_TOKEN,
       supabaseWorks: !!(process.env.SUPABASE_URL && (process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY)),
+      supabaseServiceKeyWorks: !!process.env.SUPABASE_SERVICE_KEY,
       problemIsSupabaseModule: !!process.env.TELEGRAM_BOT_TOKEN && !(process.env.SUPABASE_URL && (process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY))
     }
   }
