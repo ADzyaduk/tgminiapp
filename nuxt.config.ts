@@ -31,8 +31,10 @@ export default defineNuxtConfig({
     }
   },
 
-  // Настройки Supabase - упрощенная конфигурация
+  // Настройки Supabase - явно указываем переменные окружения
   supabase: {
+    url: process.env.SUPABASE_URL,
+    key: process.env.SUPABASE_KEY,
     redirect: false,
     cookieOptions: {
       maxAge: 60 * 60 * 24 * 7, // 7 дней
