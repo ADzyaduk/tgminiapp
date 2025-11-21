@@ -1,5 +1,6 @@
 # Многослойная сборка для оптимизации размера образа
-FROM node:20-alpine AS base
+# Используем node:20 вместо node:20-alpine для совместимости с native bindings
+FROM node:20 AS base
 
 # Устанавливаем зависимости только для production
 FROM base AS deps
@@ -7,7 +8,9 @@ WORKDIR /app
 
 # Копируем файлы зависимостей
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# Используем --omit=dev вместо --only=production (более новый синтаксис)
+# И устанавливаем optional dependencies для native bindings
+RUN npm ci --omit=dev --include=optional && npm cache clean --force
 
 # Сборка приложения
 FROM base AS builder
@@ -15,7 +18,8 @@ WORKDIR /app
 
 # Копируем файлы зависимостей
 COPY package*.json ./
-RUN npm ci
+# Устанавливаем все зависимости включая optional для native bindings
+RUN npm ci --include=optional
 
 # Копируем исходный код
 COPY . .
@@ -28,6 +32,8 @@ FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+# PORT будет установлен Amvera через переменную окружения
+# По умолчанию используем 3000, но Amvera может установить свой порт
 ENV PORT=3000
 
 # Создаем непривилегированного пользователя
