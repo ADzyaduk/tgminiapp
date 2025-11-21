@@ -47,7 +47,13 @@ export default defineEventHandler(async (event) => {
     const isDev = config.public.isTelegramDevMode
 
     if (!isDev) {
-      const isValid = validateInitData(initData, config.telegramBotToken)
+      // Используем process.env напрямую, так как runtimeConfig может не подхватить переменную без префикса
+      const botToken = config.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
+      if (!botToken) {
+        setResponseStatus(event, 500)
+        return { success: false, error: 'TELEGRAM_BOT_TOKEN not configured' }
+      }
+      const isValid = validateInitData(initData, botToken)
       if (!isValid) {
         setResponseStatus(event, 401)
         return { success: false, error: 'Invalid initData signature' }
@@ -66,6 +72,15 @@ export default defineEventHandler(async (event) => {
     }
 
     // Генерируем JWT токены
+    // Используем process.env напрямую, так как runtimeConfig может не подхватить переменные без префикса
+    const jwtSecret = config.jwtSecret || process.env.JWT_SECRET
+    const jwtRefreshSecret = config.jwtRefreshSecret || process.env.JWT_REFRESH_SECRET
+    
+    if (!jwtSecret || !jwtRefreshSecret) {
+      setResponseStatus(event, 500)
+      return { success: false, error: 'JWT secrets not configured' }
+    }
+    
     const tokens = generateTokens(
       {
         id: user.id,
@@ -73,8 +88,8 @@ export default defineEventHandler(async (event) => {
         role: user.role
       },
       {
-        jwtSecret: config.jwtSecret,
-        jwtRefreshSecret: config.jwtRefreshSecret
+        jwtSecret,
+        jwtRefreshSecret
       }
     )
 
