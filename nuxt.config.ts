@@ -84,5 +84,27 @@ export default defineNuxtConfig({
         strict: false
       }
     }
+  },
+
+  // Nitro hooks для установки переменных окружения до инициализации модулей
+  nitro: {
+    hooks: {
+      'nitro:init'(nitro: any) {
+        // Устанавливаем переменные из runtimeConfig в process.env
+        // Это выполняется при инициализации Nitro, до загрузки модулей
+        const config = nitro.options.runtimeConfig
+        
+        if (config?.public?.supabaseUrl && !process.env.SUPABASE_URL) {
+          process.env.SUPABASE_URL = config.public.supabaseUrl
+        }
+        
+        if (config?.public?.supabaseAnonKey) {
+          if (!process.env.SUPABASE_KEY && !process.env.SUPABASE_ANON_KEY) {
+            process.env.SUPABASE_KEY = config.public.supabaseAnonKey
+            process.env.SUPABASE_ANON_KEY = config.public.supabaseAnonKey
+          }
+        }
+      }
+    } as any
   }
 })
