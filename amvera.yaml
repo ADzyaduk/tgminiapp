@@ -1,11 +1,8 @@
 meta:
   environment: node
   toolchain:
-    name: npm
+    name: browser
     version: 20
 build:
-  skip: 'yes'
-run:
-  scriptName: .output/server/index.mjs
-  persistenceMount: /data
-  containerPort: 80
+  artifacts:
+    dist/*: /
