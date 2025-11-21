@@ -1,24 +1,13 @@
-# Конфигурация для Amvera Cloud
-# Документация: https://docs.amvera.ru/
-
 version: 1
 
 build:
-  # Установка зависимостей (включая devDependencies для сборки)
-  install: npm ci
-  # Команда сборки
-  command: npm run build
-  # Версия Node.js
+  command: npm install && npm run build
   node: 18
 
 run:
-  # Команда запуска
   command: npm start
-  # Порт приложения (Amvera автоматически назначит порт через переменную PORT)
   port: 3000
 
-# Переменные окружения (устанавливаются в панели управления Amvera)
-# Не указывайте секретные ключи здесь - используйте панель управления
 env:
   - NODE_ENV=production
 

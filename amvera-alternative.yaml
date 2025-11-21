@@ -1,0 +1,14 @@
+# Альтернативный вариант конфигурации для Amvera
+# Если основной amvera.yaml не работает, попробуйте этот вариант
+# Переименуйте этот файл в amvera.yaml
+
+version: 1
+
+build:
+  command: npm install --legacy-peer-deps && npm run build
+  node: 18
+
+run:
+  command: npm start
+  port: 3000
+
