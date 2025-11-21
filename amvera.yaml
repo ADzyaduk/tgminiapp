@@ -4,5 +4,6 @@ meta:
     name: docker
 build: {}
 run:
-  command: npm start
+  # Явно указываем команду запуска (совпадает с CMD в Dockerfile)
+  command: node .output/server/index.mjs
   containerPort: "3000"
