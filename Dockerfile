@@ -39,6 +39,13 @@ ENV JWT_SECRET=${JWT_SECRET}
 ENV JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
 ENV DISABLE_REALTIME=${DISABLE_REALTIME}
 
+# Проверяем наличие переменных (для отладки)
+# Не показываем полные значения для безопасности
+RUN echo "=== Checking environment variables ===" && \
+    if [ -z "$SUPABASE_URL" ]; then echo "⚠️ WARNING: SUPABASE_URL is empty"; else echo "✅ SUPABASE_URL is set (length: ${#SUPABASE_URL})"; fi && \
+    if [ -z "$SUPABASE_KEY" ] && [ -z "$SUPABASE_ANON_KEY" ]; then echo "⚠️ WARNING: SUPABASE_KEY and SUPABASE_ANON_KEY are empty"; else echo "✅ SUPABASE_KEY or SUPABASE_ANON_KEY is set"; fi && \
+    echo "=== Environment check complete ==="
+
 # Build the project
 RUN npm run build
 

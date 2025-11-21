@@ -81,6 +81,13 @@ export default defineNuxtConfig({
       fs: {
         strict: false
       }
+    },
+    // Определяем переменные окружения для клиентской части
+    // Это необходимо для ssr: false, чтобы переменные были доступны во время сборки
+    define: {
+      'process.env.SUPABASE_URL': JSON.stringify(process.env.SUPABASE_URL || ''),
+      'process.env.SUPABASE_KEY': JSON.stringify(process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || ''),
+      'process.env.SUPABASE_ANON_KEY': JSON.stringify(process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '')
     }
   }
 })
