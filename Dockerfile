@@ -37,8 +37,9 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Создаем непривилегированного пользователя
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nuxtjs
+# Используем группу nodejs, которая уже может существовать в образе
+RUN groupadd -r nodejs 2>/dev/null || true && \
+    useradd -r -g nodejs -u 1001 nuxtjs 2>/dev/null || true
 
 # Копируем зависимости из deps
 COPY --from=deps --chown=nuxtjs:nodejs /app/node_modules ./node_modules
