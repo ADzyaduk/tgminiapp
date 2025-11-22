@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
 })
 
 // Главное меню администратора
-async function handleAdminMenu(chatId: number) {
+export async function handleAdminMenu(chatId: number) {
   const message = `👑 <b>Меню администратора</b>
 
 📊 Доступные команды:
@@ -81,7 +81,7 @@ async function handleAdminMenu(chatId: number) {
 }
 
 // Статистика бронирований
-async function handleAdminStats(chatId: number, supabase: any) {
+export async function handleAdminStats(chatId: number, supabase: any) {
   try {
     // Получаем статистику за последние 30 дней
     const thirtyDaysAgo = new Date()
@@ -133,7 +133,7 @@ async function handleAdminStats(chatId: number, supabase: any) {
 }
 
 // Бронирования на сегодня
-async function handleTodayBookings(chatId: number, supabase: any) {
+export async function handleTodayBookings(chatId: number, supabase: any) {
   try {
     const today = new Date()
     const startOfDay = new Date(today)
@@ -178,7 +178,7 @@ async function handleTodayBookings(chatId: number, supabase: any) {
 }
 
 // Просмотр логов
-async function handleAdminLogs(chatId: number, args: string[]) {
+export async function handleAdminLogs(chatId: number, args: string[]) {
   try {
     const { getRecentLogs, getLogsByLevel, getLogsByTime, formatLogsForTelegram, clearLogs } = await import('~/server/utils/telegram-logs')
 
@@ -242,7 +242,7 @@ async function handleAdminLogs(chatId: number, args: string[]) {
 }
 
 // Отправка напоминаний
-async function handleSendReminders(chatId: number, event: any) {
+export async function handleSendReminders(chatId: number, event: any) {
   try {
     await sendMessage(chatId, '📤 Отправляю напоминания...')
 
@@ -275,7 +275,7 @@ function getBaseUrl(event: any): string {
 }
 
 // Функция для отправки сообщения
-async function sendMessage(chatId: number, text: string) {
+export async function sendMessage(chatId: number, text: string) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) return false

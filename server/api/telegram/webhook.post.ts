@@ -94,19 +94,85 @@ async function sendTelegramRequest(method: string, body: object) {
 
 // #endregion
 
-// #region Main Handler
-export default defineEventHandler(async (event: H3Event) => {
+// #region Message Handler
+async function handleMessage(event: H3Event, body: any) {
   try {
-    const body = await readBody(event);
+    const { message } = body;
+    const { chat, text, from } = message;
 
-    console.log('🔔 Webhook received:', JSON.stringify(body, null, 2));
-    addLog('info', 'Webhook received', { hasCallbackQuery: !!body.callback_query });
-
-    if (!body.callback_query) {
-      console.log('ℹ️ Not a callback query, ignoring');
-      return { ok: true, message: 'Not a callback query' };
+    if (!text) {
+      return { ok: true, message: 'No text in message' };
     }
 
+    addLog('info', `Message received: ${text.substring(0, 50)}`, { userId: from.id, chatId: chat.id });
+
+    // Используем serverSupabaseServiceRole для проверки прав администратора
+    const supabase = serverSupabaseServiceRole<Database>(event);
+
+    // Обработка админ-команд
+    if (text.startsWith('/admin')) {
+      const adminCommands = await import('~/server/api/telegram/admin-commands.post');
+      
+      // Проверяем права администратора
+      const { data: adminUser } = await supabase
+        .from('profiles')
+        .select('id, role, name')
+        .eq('telegram_id', from.id.toString())
+        .eq('role', 'admin')
+        .single();
+
+      if (!adminUser) {
+        await adminCommands.sendMessage(chat.id, '❌ У вас нет прав администратора');
+        return { ok: true };
+      }
+
+      const command = text.split(' ')[0].toLowerCase();
+      const args = text.split(' ').slice(1);
+
+      switch (command) {
+        case '/admin':
+          return await adminCommands.handleAdminMenu(chat.id);
+        case '/adminstats':
+          return await adminCommands.handleAdminStats(chat.id, supabase);
+        case '/admintoday':
+          return await adminCommands.handleTodayBookings(chat.id, supabase);
+        case '/adminremind':
+          return await adminCommands.handleSendReminders(chat.id, event);
+        case '/adminlogs':
+          return await adminCommands.handleAdminLogs(chat.id, args);
+        default:
+          await adminCommands.sendMessage(chat.id, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.');
+          return { ok: true };
+      }
+    }
+
+    // Обработка обычных команд - импортируем из webhook.ts
+    const webhookHandlers = await import('~/server/api/telegram/webhook');
+    
+    if (text.startsWith('/start')) {
+      return await webhookHandlers.handleStartCommand(chat.id, from, supabase);
+    }
+
+    if (text.startsWith('/help')) {
+      return await webhookHandlers.handleHelpCommand(chat.id);
+    }
+
+    // Для остальных команд отправляем стандартное сообщение
+    const { sendMessage } = await import('~/server/api/telegram/admin-commands.post');
+    await sendMessage(chat.id, '👋 Привет! Используйте /start для открытия приложения.');
+
+    return { ok: true };
+  } catch (error: any) {
+    console.error('❌ Error handling message:', error);
+    addLog('error', 'Error handling message', { error: error.message });
+    return { ok: false, error: 'Error handling message' };
+  }
+}
+// #endregion
+
+// #region Callback Query Handler
+async function handleCallbackQuery(event: H3Event, body: any) {
+  try {
     const { callback_query } = body;
     const { id: callbackQueryId, data: callbackData, message, from } = callback_query;
 
@@ -196,6 +262,36 @@ export default defineEventHandler(async (event: H3Event) => {
     }
 
     return { ok: true };
+  } catch (error: any) {
+    console.error('❌ Error handling callback query:', error);
+    addLog('error', 'Error handling callback query', { error: error.message });
+    setResponseStatus(event, 500);
+    return { ok: false, error: 'Internal Server Error' };
+  }
+}
+// #endregion
+
+// #region Main Handler
+export default defineEventHandler(async (event: H3Event) => {
+  try {
+    const body = await readBody(event);
+
+    console.log('🔔 Webhook received:', JSON.stringify(body, null, 2));
+    addLog('info', 'Webhook received', { hasCallbackQuery: !!body.callback_query, hasMessage: !!body.message });
+
+    // Обрабатываем callback_query
+    if (body.callback_query) {
+      return await handleCallbackQuery(event, body);
+    }
+
+    // Обрабатываем обычные сообщения (команды)
+    if (body.message) {
+      return await handleMessage(event, body);
+    }
+
+    // Если ни callback_query, ни message - возвращаем OK
+    console.log('ℹ️ Webhook received but no callback_query or message');
+    return { ok: true, message: 'No callback_query or message' };
   } catch (error: any) {
     console.error('❌ Unhandled error in webhook handler:', error);
     

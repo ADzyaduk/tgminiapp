@@ -1,5 +1,6 @@
 import { defineEventHandler, readBody, getQuery } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
+import { addLog } from '~/server/utils/telegram-logs'
 
 // Обработчик Telegram webhook
 export default defineEventHandler(async (event) => {
@@ -49,6 +50,13 @@ export default defineEventHandler(async (event) => {
   // Обработка команд
   if (text && text.startsWith('/')) {
     const command = text.split(' ')[0].toLowerCase()
+    addLog('info', `Command received: ${command}`, { userId: from.id, chatId: chat.id })
+
+    // Обработка админ-команд
+    if (command.startsWith('/admin')) {
+      addLog('info', `Admin command: ${command}`, { userId: from.id })
+      return await handleAdminCommand(chat.id, from, text, supabase, event)
+    }
 
     switch (command) {
       case '/start':
@@ -66,7 +74,7 @@ export default defineEventHandler(async (event) => {
 })
 
 // Обработка команды /start
-async function handleStartCommand(chatId: number, from: any, supabase: any) {
+export async function handleStartCommand(chatId: number, from: any, supabase: any) {
   // Сохраняем/обновляем Telegram ID пользователя
   const userResult = await saveTelegramUser(from, supabase)
 
@@ -116,7 +124,7 @@ async function handleStartCommand(chatId: number, from: any, supabase: any) {
 }
 
 // Обработка команды /help
-async function handleHelpCommand(chatId: number) {
+export async function handleHelpCommand(chatId: number) {
   const message = `🤖 <b>Бот для бронирования лодок</b>
 
 🚀 <b>Главная функция:</b>
@@ -311,6 +319,55 @@ async function sendMessage(chatId: number, text: string) {
   } catch (error) {
     console.error('Error sending message to Telegram:', error)
     return { status: 500, body: { error: 'Failed to send message' } }
+  }
+}
+
+// Обработка админ-команд
+async function handleAdminCommand(chatId: number, from: any, text: string, supabase: any, event: any) {
+  try {
+    // Проверяем, что пользователь - администратор
+    const { data: adminUser } = await supabase
+      .from('profiles')
+      .select('id, role, name')
+      .eq('telegram_id', from.id.toString())
+      .eq('role', 'admin')
+      .single()
+
+    if (!adminUser) {
+      await sendMessage(chatId, '❌ У вас нет прав администратора')
+      return { status: 403, body: { error: 'Access denied' } }
+    }
+
+    const command = text.split(' ')[0].toLowerCase()
+    const args = text.split(' ').slice(1)
+
+    // Импортируем функции из admin-commands
+    const adminCommands = await import('~/server/api/telegram/admin-commands.post')
+
+    switch (command) {
+      case '/admin':
+        return await adminCommands.handleAdminMenu(chatId)
+
+      case '/adminstats':
+        return await adminCommands.handleAdminStats(chatId, supabase)
+
+      case '/admintoday':
+        return await adminCommands.handleTodayBookings(chatId, supabase)
+
+      case '/adminremind':
+        return await adminCommands.handleSendReminders(chatId, event)
+
+      case '/adminlogs':
+        return await adminCommands.handleAdminLogs(chatId, args)
+
+      default:
+        await adminCommands.sendMessage(chatId, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.')
+        return { status: 200, body: { success: true } }
+    }
+  } catch (error) {
+    console.error('Error in admin command handler:', error)
+    await sendMessage(chatId, '❌ Ошибка обработки команды администратора')
+    return { status: 500, body: { error: 'Internal server error' } }
   }
 }
 
