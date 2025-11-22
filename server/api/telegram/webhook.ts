@@ -11,6 +11,14 @@ export default defineEventHandler(async (event) => {
   // Получение данных запроса
   const body = await readBody(event)
 
+  // ВАЖНО: Если это callback_query, передаем обработку в webhook.post.ts
+  // В Nuxt 3 файлы с .post.ts имеют приоритет, но на всякий случай проверяем здесь
+  if (body && body.callback_query) {
+    console.log('ℹ️ Callback query detected in webhook.ts, should be handled by webhook.post.ts');
+    // Возвращаем OK, чтобы не блокировать обработку в webhook.post.ts
+    return { status: 200, body: { ok: true, message: 'Callback query will be handled by webhook.post.ts' } }
+  }
+
   // Проверка наличия сообщения
   if (!body || !body.message) {
     return { status: 400, body: { error: 'Invalid request' } }

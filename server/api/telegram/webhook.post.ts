@@ -33,17 +33,24 @@ type BookingWithDetails = Booking & {
  * @param text Необязательный текст для уведомления пользователя
  * @param showAlert Показывать ли как всплывающее уведомление (по умолчанию false)
  */
-async function answerCallbackQuery(callbackQueryId: string, text?: string, showAlert: boolean = false) {
+async function answerCallbackQuery(callbackQueryId: string, text?: string, showAlert: boolean = false): Promise<boolean> {
   // Выполняем синхронно, чтобы убедиться что ответ дошел
   try {
-    await sendTelegramRequest('answerCallbackQuery', {
+    const result = await sendTelegramRequest('answerCallbackQuery', {
       callback_query_id: callbackQueryId,
       text: text || '',
       show_alert: showAlert
     });
-    console.log(`✅ Answered callback query: ${callbackQueryId}${text ? ` with text: ${text}` : ''}`);
+    const success = result !== null && result.ok !== false;
+    if (success) {
+      console.log(`✅ Answered callback query: ${callbackQueryId}${text ? ` with text: ${text}` : ''}`);
+    } else {
+      console.error(`❌ Failed to answer callback query: ${callbackQueryId}`, result);
+    }
+    return success;
   } catch (error) {
     console.error('❌ Failed to answer callback query:', error);
+    return false;
   }
 }
 
@@ -131,6 +138,15 @@ export default defineEventHandler(async (event: H3Event) => {
       return { ok: false, error: 'Invalid callback_data format.' };
     }
 
+    // Проверяем формат bookingId (должен быть UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(bookingId)) {
+      console.error('❌ Invalid booking ID format:', bookingId);
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный ID бронирования', false);
+      setResponseStatus(event, 400);
+      return { ok: false, error: 'Invalid booking ID format.' };
+    }
+
     // Проверяем валидность action
     if (action !== 'confirm' && action !== 'cancel') {
       console.error('❌ Invalid action:', action);
@@ -141,10 +157,13 @@ export default defineEventHandler(async (event: H3Event) => {
 
     console.log(`🔄 Processing ${action} for ${bookingType} booking ${bookingId}`);
     console.log(`   Callback data: ${callbackData} (${new TextEncoder().encode(callbackData).length} bytes)`);
+    console.log(`   Manager Telegram ID: ${from.id}`);
+    console.log(`   Chat ID: ${message.chat.id}, Message ID: ${message.message_id}`);
 
     // КРИТИЧЕСКИ ВАЖНО: Отвечаем на callback_query СРАЗУ, чтобы убрать "часики" с кнопки
     // Telegram требует ответ в течение нескольких секунд, иначе покажет ошибку
-    await answerCallbackQuery(callbackQueryId, '⏳ Обрабатываем...', false);
+    const answerResult = await answerCallbackQuery(callbackQueryId, '⏳ Обрабатываем...', false);
+    console.log(`   Callback query answered:`, answerResult ? 'success' : 'failed');
 
     // Обрабатываем в зависимости от типа бронирования
     if (bookingType === 'regular') {
@@ -167,7 +186,9 @@ export default defineEventHandler(async (event: H3Event) => {
       });
     } else {
       console.warn(`⚠️ Unsupported booking type: ${bookingType}`);
-      await answerCallbackQuery(callbackQueryId, `⚠️ Неподдерживаемый тип бронирования: ${bookingType}`, false);
+      // callback_query уже отвечен в начале, просто возвращаем ошибку
+      setResponseStatus(event, 400);
+      return { ok: false, error: `Unsupported booking type: ${bookingType}` };
     }
 
     return { ok: true };
@@ -196,6 +217,8 @@ interface BookingContext {
 async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
   const supabase = serverSupabaseServiceRole<Database>(event);
 
+  console.log(`🔍 Fetching booking with ID: ${ctx.bookingId}`);
+  
   // 1. Получаем бронирование со всеми деталями
   const { data: booking, error: fetchError } = await supabase
     .from('bookings')
@@ -205,10 +228,13 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   if (fetchError || !booking) {
     console.error(`🚨 Booking not found or fetch error for ID ${ctx.bookingId}:`, fetchError);
+    console.error(`   Error details:`, JSON.stringify(fetchError, null, 2));
     // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
     await updateManagerMessage(ctx, 'not_found');
     return;
   }
+
+  console.log(`✅ Booking found: ${booking.id}, current status: ${booking.status}`);
 
   // 2. Проверяем, не было ли бронирование уже обработано
   if (booking.status !== 'pending') {
@@ -227,31 +253,39 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   // 4. Обновляем статус
   const newStatus = ctx.action === 'confirm' ? 'confirmed' : 'cancelled';
-  const { error: updateError } = await supabase
+  console.log(`🔄 Updating booking ${ctx.bookingId} status from ${booking.status} to ${newStatus}`);
+  
+  const { data: updatedBooking, error: updateError } = await supabase
     .from('bookings')
     .update({ status: newStatus })
-    .eq('id', ctx.bookingId);
+    .eq('id', ctx.bookingId)
+    .select('*, profile:profiles(*), boat:boats(*)')
+    .single();
 
   if (updateError) {
     console.error(`🚨 DB update error for booking ${ctx.bookingId}:`, updateError);
+    console.error(`   Error details:`, JSON.stringify(updateError, null, 2));
     // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
     await updateManagerMessage(ctx, 'error', booking);
     return;
   }
 
+  if (!updatedBooking) {
+    console.error(`🚨 Booking ${ctx.bookingId} not found after update`);
+    await updateManagerMessage(ctx, 'error', booking);
+    return;
+  }
+
   console.log(`✅ Successfully updated booking ${ctx.bookingId} to ${newStatus}`);
+  console.log(`   Updated booking status: ${updatedBooking.status}`);
 
-  // 5. Показываем финальное уведомление пользователю
-  // Примечание: мы уже ответили на callback_query в начале, поэтому здесь просто обновляем сообщение
-  const actionText = ctx.action === 'confirm' ? 'подтверждено' : 'отменено';
-  // Можно отправить дополнительное уведомление через editMessageText или оставить как есть
+  // 5. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
+  // Используем обновленное бронирование
+  await updateManagerMessage(ctx, newStatus, updatedBooking as BookingWithDetails);
 
-  // 6. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
-  await updateManagerMessage(ctx, newStatus, booking);
-
-  // 7. Уведомляем клиента
+  // 6. Уведомляем клиента
   const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications');
-  await sendClientStatusNotification(booking as any, newStatus);
+  await sendClientStatusNotification(updatedBooking as any, newStatus);
 }
 
 /**
@@ -260,6 +294,8 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
   const supabase = serverSupabaseServiceRole<Database>(event);
 
+  console.log(`🔍 Fetching group trip booking with ID: ${ctx.bookingId}`);
+  
   // 1. Получаем бронирование групповой поездки со всеми деталями
   const { data: booking, error: fetchError } = await supabase
     .from('group_trip_bookings')
@@ -269,10 +305,13 @@ async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
 
   if (fetchError || !booking) {
     console.error(`🚨 Group trip booking not found or fetch error for ID ${ctx.bookingId}:`, fetchError);
+    console.error(`   Error details:`, JSON.stringify(fetchError, null, 2));
     // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
     await updateGroupTripManagerMessage(ctx, 'not_found');
     return;
   }
+
+  console.log(`✅ Group trip booking found: ${booking.id}, current status: ${booking.status}`);
 
   // 2. Проверяем, не было ли бронирование уже обработано
   // Для групповых поездок статусы: confirmed, completed, cancelled
@@ -298,31 +337,39 @@ async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
     newStatus = 'cancelled';
   }
 
-  const { error: updateError } = await supabase
+  console.log(`🔄 Updating group trip booking ${ctx.bookingId} status from ${booking.status} to ${newStatus}`);
+  
+  const { data: updatedBooking, error: updateError } = await supabase
     .from('group_trip_bookings')
     .update({ status: newStatus })
-    .eq('id', ctx.bookingId);
+    .eq('id', ctx.bookingId)
+    .select('*, profile:profiles(*), group_trip:group_trips(*, boat:boats(*))')
+    .single();
 
   if (updateError) {
     console.error(`🚨 DB update error for group trip booking ${ctx.bookingId}:`, updateError);
+    console.error(`   Error details:`, JSON.stringify(updateError, null, 2));
     // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
     await updateGroupTripManagerMessage(ctx, 'error', booking);
     return;
   }
 
+  if (!updatedBooking) {
+    console.error(`🚨 Group trip booking ${ctx.bookingId} not found after update`);
+    await updateGroupTripManagerMessage(ctx, 'error', booking);
+    return;
+  }
+
   console.log(`✅ Successfully updated group trip booking ${ctx.bookingId} to ${newStatus}`);
+  console.log(`   Updated booking status: ${updatedBooking.status}`);
 
-  // 4. Показываем финальное уведомление пользователю
-  // Примечание: мы уже ответили на callback_query в начале, поэтому здесь просто обновляем сообщение
-  const actionText = ctx.action === 'confirm' ? 'подтверждено' : 'отменено';
-  // Можно отправить дополнительное уведомление через editMessageText или оставить как есть
+  // 4. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
+  // Используем обновленное бронирование
+  await updateGroupTripManagerMessage(ctx, newStatus, updatedBooking);
 
-  // 5. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
-  await updateGroupTripManagerMessage(ctx, newStatus, booking);
-
-  // 6. Уведомляем клиента
+  // 5. Уведомляем клиента
   const { sendGroupTripStatusNotification } = await import('~/server/utils/telegram-notifications');
-  await sendGroupTripStatusNotification(booking as any, newStatus);
+  await sendGroupTripStatusNotification(updatedBooking as any, newStatus);
 }
 
 /**
