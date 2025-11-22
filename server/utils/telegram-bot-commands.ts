@@ -232,12 +232,14 @@ export async function sendWebAppButton(chatId: number, text: string, buttonText:
 
   const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
 
+  // ВАЖНО: web_app кнопки не всегда работают внутри чата с ботом
+  // Используем обычную URL кнопку как fallback - она всегда работает
   const keyboard = {
     inline_keyboard: [
       [
         {
           text: buttonText,
-          web_app: { url: webAppUrl }
+          url: webAppUrl  // Обычная ссылка работает везде
         }
       ]
     ]
@@ -258,6 +260,11 @@ export async function sendWebAppButton(chatId: number, text: string, buttonText:
     })
 
     const data = await response.json()
+    
+    if (!data.ok) {
+      console.error('❌ Telegram API error:', data)
+    }
+    
     return { status: 200, body: data }
   } catch (error) {
     console.error('Error sending message to Telegram:', error)

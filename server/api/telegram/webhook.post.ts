@@ -290,12 +290,32 @@ export default defineEventHandler(async (event: H3Event) => {
   try {
     const body = await readBody(event);
 
-    console.log('🔔 Webhook received:', JSON.stringify(body, null, 2));
-    addLog('info', 'Webhook received', { hasCallbackQuery: !!body.callback_query, hasMessage: !!body.message });
+    // Логируем только важную информацию (не весь body, он может быть большим)
+    const hasCallback = !!body.callback_query
+    const hasMessage = !!body.message
+    
+    console.log('🔔 Webhook received:', { 
+      hasCallbackQuery: hasCallback, 
+      hasMessage: hasMessage,
+      update_id: body.update_id 
+    });
+    
+    if (hasCallback) {
+      console.log('📱 Callback query details:', {
+        id: body.callback_query?.id,
+        data: body.callback_query?.data,
+        from_id: body.callback_query?.from?.id,
+        message_id: body.callback_query?.message?.message_id
+      });
+    }
+    
+    addLog('info', 'Webhook received', { hasCallbackQuery: hasCallback, hasMessage: hasMessage });
 
     // Обрабатываем callback_query
     if (body.callback_query) {
+      console.log('🔄 Processing callback_query...');
       const result = await handleCallbackQuery(event, body);
+      console.log('✅ Callback query processed, result:', result);
       // ВАЖНО: Всегда возвращаем 200 OK для Telegram, иначе webhook перестанет работать
       setResponseStatus(event, 200);
       return result;
@@ -303,6 +323,7 @@ export default defineEventHandler(async (event: H3Event) => {
 
     // Обрабатываем обычные сообщения (команды)
     if (body.message) {
+      console.log('💬 Processing message...');
       const result = await handleMessage(event, body);
       setResponseStatus(event, 200);
       return result;
@@ -314,6 +335,7 @@ export default defineEventHandler(async (event: H3Event) => {
     return { ok: true, message: 'No callback_query or message' };
   } catch (error: any) {
     console.error('❌ Unhandled error in webhook handler:', error);
+    console.error('❌ Error stack:', error.stack);
     addLog('error', 'Unhandled error in webhook', { error: error.message, stack: error.stack });
     
     // КРИТИЧЕСКИ ВАЖНО: Всегда возвращаем 200 OK для Telegram
