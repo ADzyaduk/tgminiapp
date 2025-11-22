@@ -137,6 +137,10 @@ async function handleMessage(event: H3Event, body: any) {
           return await adminCommands.handleSendReminders(chat.id, event);
         case '/adminlogs':
           return await adminCommands.handleAdminLogs(chat.id, args);
+        case '/adminwebhook':
+          return await adminCommands.handleWebhookCheck(chat.id);
+        case '/admintest':
+          return await adminCommands.handleTestButtons(chat.id);
         default:
           await adminCommands.sendMessage(chat.id, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.');
           return { ok: true };
@@ -240,14 +244,16 @@ async function handleCallbackQuery(event: H3Event, body: any) {
     console.log(`   Chat ID: ${message.chat.id}, Message ID: ${message.message_id}`);
 
     // КРИТИЧЕСКИ ВАЖНО: Отвечаем на callback_query СРАЗУ, чтобы убрать "часики" с кнопки
-    // Telegram требует ответ в течение нескольких секунд, иначе покажет ошибку
-    // Отвечаем БЕЗ текста сначала, чтобы убрать индикатор загрузки
+    // Согласно документации Telegram Bot API: answerCallbackQuery должен быть вызван
+    // в течение нескольких секунд после получения callback_query
+    // Отвечаем БЕЗ текста и БЕЗ alert, просто убираем индикатор загрузки
     const answerResult = await answerCallbackQuery(callbackQueryId, '', false);
-    console.log(`   Callback query answered:`, answerResult ? 'success' : 'failed');
+    console.log(`   ✅ Callback query answered:`, answerResult ? 'success' : 'failed');
     
     if (!answerResult) {
       console.error(`❌ Failed to answer callback query - Telegram may show error to user`);
-      // Продолжаем обработку даже если ответ не отправился
+      console.error(`   This is critical - Telegram requires answerCallbackQuery to be called!`);
+      // Продолжаем обработку даже если ответ не отправился, но это плохо
     }
 
     // Обрабатываем в зависимости от типа бронирования

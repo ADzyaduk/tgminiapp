@@ -54,6 +54,12 @@ export default defineEventHandler(async (event) => {
       case '/adminlogs':
         return await handleAdminLogs(chat.id, args)
 
+      case '/adminwebhook':
+        return await handleWebhookCheck(chat.id)
+
+      case '/admintest':
+        return await handleTestButtons(chat.id)
+
       default:
         await sendMessage(chat.id, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.')
     }
@@ -74,6 +80,8 @@ export async function handleAdminMenu(chatId: number) {
 /admintoday - Бронирования на сегодня
 /adminremind - Отправить напоминания
 /adminlogs - Просмотр логов бота
+/adminwebhook - Проверка webhook
+/admintest - Тест кнопок
 
 🔔 Вы также получаете автоматические уведомления о новых бронированиях.`
 
@@ -180,11 +188,14 @@ export async function handleTodayBookings(chatId: number, supabase: any) {
 // Просмотр логов
 export async function handleAdminLogs(chatId: number, args: string[]) {
   try {
+    console.log(`📋 Admin logs requested by ${chatId}, args:`, args)
+    
     const { getRecentLogs, getLogsByLevel, getLogsByTime, formatLogsForTelegram, clearLogs } = await import('~/server/utils/telegram-logs')
 
     // Обработка аргументов команды
     if (args.length > 0) {
       const subCommand = args[0].toLowerCase()
+      console.log(`📋 Processing subcommand: ${subCommand}`)
 
       if (subCommand === 'clear') {
         clearLogs()
@@ -194,6 +205,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
 
       if (subCommand === 'error' || subCommand === 'errors') {
         const errorLogs = getLogsByLevel('error', 30)
+        console.log(`📋 Found ${errorLogs.length} error logs`)
         const message = formatLogsForTelegram(errorLogs)
         await sendMessage(chatId, message)
         return { status: 200, body: { success: true } }
@@ -201,6 +213,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
 
       if (subCommand === 'warn' || subCommand === 'warnings') {
         const warnLogs = getLogsByLevel('warn', 30)
+        console.log(`📋 Found ${warnLogs.length} warn logs`)
         const message = formatLogsForTelegram(warnLogs)
         await sendMessage(chatId, message)
         return { status: 200, body: { success: true } }
@@ -210,6 +223,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
       const minutes = parseInt(subCommand)
       if (!isNaN(minutes) && minutes > 0) {
         const timeLogs = getLogsByTime(minutes)
+        console.log(`📋 Found ${timeLogs.length} logs for last ${minutes} minutes`)
         const message = formatLogsForTelegram(timeLogs)
         await sendMessage(chatId, message)
         return { status: 200, body: { success: true } }
@@ -219,6 +233,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
       const count = parseInt(subCommand)
       if (!isNaN(count) && count > 0) {
         const recentLogs = getRecentLogs(Math.min(count, 50))
+        console.log(`📋 Found ${recentLogs.length} recent logs`)
         const message = formatLogsForTelegram(recentLogs)
         await sendMessage(chatId, message)
         return { status: 200, body: { success: true } }
@@ -226,12 +241,22 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
     }
 
     // По умолчанию показываем последние 20 логов
+    console.log('📋 Getting default 20 recent logs')
     const recentLogs = getRecentLogs(20)
+    console.log(`📋 Found ${recentLogs.length} logs`)
+    
+    if (recentLogs.length === 0) {
+      await sendMessage(chatId, '📋 Логов пока нет. Логи появляются при работе бота (webhook, команды, кнопки).')
+      return { status: 200, body: { success: true } }
+    }
+    
     const message = formatLogsForTelegram(recentLogs)
+    console.log(`📋 Formatted message length: ${message.length} chars`)
     
     if (message.length > 4096) {
       // Если сообщение слишком длинное, разбиваем на части
       const parts = message.match(/.{1,4000}/g) || []
+      console.log(`📋 Splitting into ${parts.length} parts`)
       for (const part of parts) {
         await sendMessage(chatId, part)
         // Небольшая задержка между сообщениями
@@ -243,9 +268,124 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
     
     return { status: 200, body: { success: true } }
   } catch (error) {
-    console.error('Error getting admin logs:', error)
-    await sendMessage(chatId, '❌ Ошибка получения логов: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    return { status: 200, body: { success: false, error: 'Error getting logs' } }
+    console.error('❌ Error getting admin logs:', error)
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack')
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    await sendMessage(chatId, `❌ Ошибка получения логов: ${errorMsg}\n\nПроверьте консоль сервера для подробностей.`)
+    return { status: 200, body: { success: false, error: errorMsg } }
+  }
+}
+
+// Проверка webhook
+export async function handleWebhookCheck(chatId: number) {
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) {
+      await sendMessage(chatId, '❌ TELEGRAM_BOT_TOKEN не настроен')
+      return { status: 200, body: { success: false } }
+    }
+
+    await sendMessage(chatId, '🔍 Проверяю webhook...')
+
+    const response = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`)
+    const result = await response.json()
+
+    if (result.ok) {
+      const info = result.result
+      const message = `📡 <b>Информация о Webhook</b>
+
+✅ Статус: ${info.url ? 'Настроен' : 'Не настроен'}
+🔗 URL: ${info.url || 'Не установлен'}
+📊 Ожидающих обновлений: ${info.pending_update_count || 0}
+⏰ Последняя ошибка: ${info.last_error_date ? new Date(info.last_error_date * 1000).toLocaleString('ru-RU') : 'Нет'}
+❌ Последнее сообщение об ошибке: ${info.last_error_message || 'Нет ошибок'}
+🔄 Последняя синхронизация: ${info.last_synchronization_error_date ? new Date(info.last_synchronization_error_date * 1000).toLocaleString('ru-RU') : 'Нет'}
+
+${info.url ? '✅ Webhook настроен правильно' : '⚠️ Webhook не настроен. Используйте /admin для настройки.'}`
+
+      await sendMessage(chatId, message)
+    } else {
+      await sendMessage(chatId, `❌ Ошибка получения информации о webhook: ${result.description || 'Unknown error'}`)
+    }
+
+    return { status: 200, body: { success: true } }
+  } catch (error) {
+    console.error('Error checking webhook:', error)
+    await sendMessage(chatId, '❌ Ошибка проверки webhook: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    return { status: 200, body: { success: false } }
+  }
+}
+
+// Тест кнопок
+export async function handleTestButtons(chatId: number) {
+  try {
+    await sendMessage(chatId, '🧪 Отправляю тестовое сообщение с кнопками...')
+
+    const token = process.env.TELEGRAM_BOT_TOKEN
+    if (!token) {
+      await sendMessage(chatId, '❌ TELEGRAM_BOT_TOKEN не настроен')
+      return { status: 200, body: { success: false } }
+    }
+
+    const testBookingId = '00000000-0000-0000-0000-000000000001'
+    const bookingType = 'regular'
+    const confirmData = `${bookingType}:confirm:${testBookingId}`
+    const cancelData = `${bookingType}:cancel:${testBookingId}`
+
+    const message = `🧪 <b>ТЕСТ КНОПОК</b>
+
+Это тестовое сообщение для проверки работы инлайн кнопок.
+
+🆔 <b>Booking ID:</b> <code>${testBookingId}</code>
+📋 <b>Тип:</b> Обычное бронирование
+
+<b>Инструкция:</b>
+1. Нажмите на кнопку "✅ Подтвердить (тест)"
+2. Если кнопка работает:
+   - "Часики" исчезнут сразу
+   - Сообщение обновится через 1-2 секунды
+   - Кнопки исчезнут, появится статус
+3. Если не работает - проверьте логи командой /adminlogs`
+
+    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '✅ Подтвердить (тест)',
+                callback_data: confirmData
+              },
+              {
+                text: '❌ Отменить (тест)',
+                callback_data: cancelData
+              }
+            ]
+          ]
+        }
+      })
+    })
+
+    const result = await response.json()
+
+    if (result.ok) {
+      await sendMessage(chatId, '✅ Тестовое сообщение отправлено! Нажмите на кнопки выше.')
+    } else {
+      await sendMessage(chatId, `❌ Ошибка отправки: ${result.description || 'Unknown error'}`)
+    }
+
+    return { status: 200, body: { success: true } }
+  } catch (error) {
+    console.error('Error in test buttons:', error)
+    await sendMessage(chatId, '❌ Ошибка тестирования кнопок: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    return { status: 200, body: { success: false } }
   }
 }
 
