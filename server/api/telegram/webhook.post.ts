@@ -143,19 +143,32 @@ async function handleMessage(event: H3Event, body: any) {
       }
     }
 
-    // Обработка обычных команд - импортируем из webhook.ts
-    const webhookHandlers = await import('~/server/api/telegram/webhook');
+    // Обработка обычных команд
+    const { 
+      handleStartCommand, 
+      handleHelpCommand, 
+      handleMyBookingsCommand, 
+      handleStatusCommand, 
+      sendMessage 
+    } = await import('~/server/utils/telegram-bot-commands');
     
     if (text.startsWith('/start')) {
-      return await webhookHandlers.handleStartCommand(chat.id, from, supabase);
+      return await handleStartCommand(chat.id, from, supabase);
     }
 
     if (text.startsWith('/help')) {
-      return await webhookHandlers.handleHelpCommand(chat.id);
+      return await handleHelpCommand(chat.id);
+    }
+
+    if (text.startsWith('/mybookings')) {
+      return await handleMyBookingsCommand(chat.id, from, supabase);
+    }
+
+    if (text.startsWith('/status')) {
+      return await handleStatusCommand(chat.id, from, supabase);
     }
 
     // Для остальных команд отправляем стандартное сообщение
-    const { sendMessage } = await import('~/server/api/telegram/admin-commands.post');
     await sendMessage(chat.id, '👋 Привет! Используйте /start для открытия приложения.');
 
     return { ok: true };

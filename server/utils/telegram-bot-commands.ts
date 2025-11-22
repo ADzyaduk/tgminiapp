@@ -1,79 +1,8 @@
-import { defineEventHandler, readBody, getQuery } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
 import { addLog } from '~/server/utils/telegram-logs'
 
-// Обработчик Telegram webhook
-export default defineEventHandler(async (event) => {
-  // Проверка метода запроса
-  if (event.method !== 'POST') {
-    return { status: 405, body: { error: 'Method not allowed' } }
-  }
+// #region Command Handlers
 
-  // Получение данных запроса
-  const body = await readBody(event)
-
-  // ВАЖНО: Если это callback_query, передаем обработку в webhook.post.ts
-  // В Nuxt 3 файлы с .post.ts имеют приоритет, но на всякий случай проверяем здесь
-  if (body && body.callback_query) {
-    console.log('ℹ️ Callback query detected in webhook.ts, should be handled by webhook.post.ts');
-    // Возвращаем OK, чтобы не блокировать обработку в webhook.post.ts
-    return { status: 200, body: { ok: true, message: 'Callback query will be handled by webhook.post.ts' } }
-  }
-
-  // Проверка наличия сообщения
-  if (!body || !body.message) {
-    return { status: 400, body: { error: 'Invalid request' } }
-  }
-
-  // Получаем данные запроса
-  const { message } = body
-  const { chat, text, from } = message
-
-  // Получаем клиент Supabase
-  const supabase = await serverSupabaseClient(event)
-
-  // Автоматическое приветствие для новых пользователей (без команды)
-  if (text && !text.startsWith('/')) {
-    // Проверяем, первый ли раз пользователь пишет боту
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('telegram_id', from.id.toString())
-      .single()
-
-    if (!existingUser) {
-      // Новый пользователь - показываем приветствие
-      return await handleStartCommand(chat.id, from, supabase)
-    }
-  }
-
-  // Обработка команд
-  if (text && text.startsWith('/')) {
-    const command = text.split(' ')[0].toLowerCase()
-    addLog('info', `Command received: ${command}`, { userId: from.id, chatId: chat.id })
-
-    // Обработка админ-команд
-    if (command.startsWith('/admin')) {
-      addLog('info', `Admin command: ${command}`, { userId: from.id })
-      return await handleAdminCommand(chat.id, from, text, supabase, event)
-    }
-
-    switch (command) {
-      case '/start':
-        return await handleStartCommand(chat.id, from, supabase)
-
-      case '/help':
-        return await handleHelpCommand(chat.id)
-
-      default:
-        return await sendMessage(chat.id, '👋 Привет! Используйте /start для открытия приложения.')
-    }
-  }
-
-  return { status: 200, body: { success: true } }
-})
-
-// Обработка команды /start
 export async function handleStartCommand(chatId: number, from: any, supabase: any) {
   // Сохраняем/обновляем Telegram ID пользователя
   const userResult = await saveTelegramUser(from, supabase)
@@ -123,7 +52,6 @@ export async function handleStartCommand(chatId: number, from: any, supabase: an
   return await sendWebAppButton(chatId, message, '🚀 Открыть приложение')
 }
 
-// Обработка команды /help
 export async function handleHelpCommand(chatId: number) {
   const message = `🤖 <b>Бот для бронирования лодок</b>
 
@@ -141,8 +69,7 @@ export async function handleHelpCommand(chatId: number) {
   return await sendMessage(chatId, message)
 }
 
-// Обработка команды /mybookings
-async function handleMyBookingsCommand(chatId: number, from: any, supabase: any) {
+export async function handleMyBookingsCommand(chatId: number, from: any, supabase: any) {
   // Ищем пользователя в базе
   const { data: user } = await supabase
     .from('profiles')
@@ -201,8 +128,7 @@ async function handleMyBookingsCommand(chatId: number, from: any, supabase: any)
   return await sendMessage(chatId, message)
 }
 
-// Обработка команды /status
-async function handleStatusCommand(chatId: number, from: any, supabase: any) {
+export async function handleStatusCommand(chatId: number, from: any, supabase: any) {
   // Ищем пользователя в базе
   const { data: user } = await supabase
     .from('profiles')
@@ -256,122 +182,10 @@ ${booking.status === 'cancelled' ? '❌ К сожалению, брониров�
   return await sendMessage(chatId, message)
 }
 
-// Функция для отправки сообщения с кнопкой WebApp
-async function sendWebAppButton(chatId: number, text: string, buttonText: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL || 'https://your-app-url.com'
+// #endregion
 
-  const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+// #region Helper Functions
 
-  const keyboard = {
-    inline_keyboard: [
-      [
-        {
-          text: buttonText,
-          web_app: { url: webAppUrl }
-        }
-      ]
-    ]
-  }
-
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: 'HTML',
-        reply_markup: keyboard
-      })
-    })
-
-    const data = await response.json()
-    return { status: 200, body: data }
-  } catch (error) {
-    console.error('Error sending message to Telegram:', error)
-    return { status: 500, body: { error: 'Failed to send message' } }
-  }
-}
-
-// Функция для отправки обычного сообщения
-async function sendMessage(chatId: number, text: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: 'HTML'
-      })
-    })
-
-    const data = await response.json()
-    return { status: 200, body: data }
-  } catch (error) {
-    console.error('Error sending message to Telegram:', error)
-    return { status: 500, body: { error: 'Failed to send message' } }
-  }
-}
-
-// Обработка админ-команд
-async function handleAdminCommand(chatId: number, from: any, text: string, supabase: any, event: any) {
-  try {
-    // Проверяем, что пользователь - администратор
-    const { data: adminUser } = await supabase
-      .from('profiles')
-      .select('id, role, name')
-      .eq('telegram_id', from.id.toString())
-      .eq('role', 'admin')
-      .single()
-
-    if (!adminUser) {
-      await sendMessage(chatId, '❌ У вас нет прав администратора')
-      return { status: 403, body: { error: 'Access denied' } }
-    }
-
-    const command = text.split(' ')[0].toLowerCase()
-    const args = text.split(' ').slice(1)
-
-    // Импортируем функции из admin-commands
-    const adminCommands = await import('~/server/api/telegram/admin-commands.post')
-
-    switch (command) {
-      case '/admin':
-        return await adminCommands.handleAdminMenu(chatId)
-
-      case '/adminstats':
-        return await adminCommands.handleAdminStats(chatId, supabase)
-
-      case '/admintoday':
-        return await adminCommands.handleTodayBookings(chatId, supabase)
-
-      case '/adminremind':
-        return await adminCommands.handleSendReminders(chatId, event)
-
-      case '/adminlogs':
-        return await adminCommands.handleAdminLogs(chatId, args)
-
-      default:
-        await adminCommands.sendMessage(chatId, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.')
-        return { status: 200, body: { success: true } }
-    }
-  } catch (error) {
-    console.error('Error in admin command handler:', error)
-    await sendMessage(chatId, '❌ Ошибка обработки команды администратора')
-    return { status: 500, body: { error: 'Internal server error' } }
-  }
-}
-
-// Функция для сохранения Telegram пользователя
 async function saveTelegramUser(from: any, supabase: any) {
   try {
     // Проверяем есть ли уже пользователь с таким telegram_id
@@ -411,3 +225,70 @@ async function saveTelegramUser(from: any, supabase: any) {
     return null
   }
 }
+
+export async function sendWebAppButton(chatId: number, text: string, buttonText: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL || 'https://your-app-url.com'
+
+  const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: buttonText,
+          web_app: { url: webAppUrl }
+        }
+      ]
+    ]
+  }
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML',
+        reply_markup: keyboard
+      })
+    })
+
+    const data = await response.json()
+    return { status: 200, body: data }
+  } catch (error) {
+    console.error('Error sending message to Telegram:', error)
+    return { status: 500, body: { error: 'Failed to send message' } }
+  }
+}
+
+export async function sendMessage(chatId: number, text: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML'
+      })
+    })
+
+    const data = await response.json()
+    return { status: 200, body: data }
+  } catch (error) {
+    console.error('Error sending message to Telegram:', error)
+    return { status: 500, body: { error: 'Failed to send message' } }
+  }
+}
+
+// #endregion
+
