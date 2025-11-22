@@ -15,14 +15,11 @@ type BookingWithDetails = Booking & {
 }
 
 /**
- * ВРЕМЕННЫЙ ОТЛАДОЧНЫЙ ОБРАБОТЧИК ДЛЯ ДИАГНОСТИКИ ПРОБЛЕМ С API TELEGRAM
- *
- * Этот код полностью заменяет стандартную логику для проверки трех основных действий:
- * 1. answerCallbackQuery - убирает "загрузку" с кнопки.
- * 2. editMessageText - редактирует сообщение, убирая кнопки.
- * 3. sendMessage - отправляет новое сообщение.
- *
- * Он не использует базу данных и никак не влияет на статусы бронирований.
+ * Основной обработчик Webhook для Telegram API
+ * 
+ * Обрабатывает:
+ * 1. Callback Query (нажатия на кнопки) - подтверждение/отмена бронирований
+ * 2. Текстовые сообщения - команды (/admin, /start и др.)
  */
 
 // #region Telegram API Helpers
@@ -198,11 +195,12 @@ async function handleCallbackQuery(event: H3Event, body: any) {
     }
 
     const [bookingType, action, ...bookingIdParts] = parts;
-    const bookingId = bookingIdParts.join(':'); // На случай если bookingId содержит ':'
+    let bookingId = bookingIdParts.join(':'); // На случай если bookingId содержит ':'
+    bookingId = bookingId.trim(); // Убираем пробелы если есть
 
     if (!bookingType || !action || !bookingId) {
-      console.error('❌ Invalid callback data format:', callbackData);
-      console.error('   bookingType:', bookingType, 'action:', action, 'bookingId:', bookingId);
+      console.error('❌ Invalid callback data format (missing parts):', callbackData);
+      console.error(`   bookingType: '${bookingType}', action: '${action}', bookingId: '${bookingId}'`);
       await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', false);
       setResponseStatus(event, 400);
       return { ok: false, error: 'Invalid callback_data format.' };
@@ -212,6 +210,8 @@ async function handleCallbackQuery(event: H3Event, body: any) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(bookingId)) {
       console.error('❌ Invalid booking ID format:', bookingId);
+      console.error(`   Callback Data: ${callbackData}`);
+      console.error(`   Parsed ID length: ${bookingId.length}`);
       await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный ID бронирования', false);
       setResponseStatus(event, 400);
       return { ok: false, error: 'Invalid booking ID format.' };

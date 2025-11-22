@@ -29,11 +29,11 @@ export default defineEventHandler(async (event) => {
         [
           {
             text: '✅ Подтвердить',
-            callback_data: `confirm_${booking_type}_${booking_id}`
+            callback_data: `${booking_type}:confirm:${booking_id}`
           },
           {
             text: '❌ Отменить',
-            callback_data: `cancel_${booking_type}_${booking_id}`
+            callback_data: `${booking_type}:cancel:${booking_id}`
           }
         ]
       ]
