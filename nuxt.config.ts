@@ -2,7 +2,7 @@ export default defineNuxtConfig({
   // Базовые настройки
   // SSR включен - переменные окружения будут доступны на сервере через runtimeConfig
   // Это решает проблему с переменными окружения в Amvera Cloud
-  ssr: true,
+  ssr: false,
   compatibilityDate: '2025-05-05',
 
   // Важные модули
