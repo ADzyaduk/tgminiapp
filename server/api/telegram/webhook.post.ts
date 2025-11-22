@@ -245,8 +245,14 @@ async function handleCallbackQuery(event: H3Event, body: any) {
 
     // КРИТИЧЕСКИ ВАЖНО: Отвечаем на callback_query СРАЗУ, чтобы убрать "часики" с кнопки
     // Telegram требует ответ в течение нескольких секунд, иначе покажет ошибку
-    const answerResult = await answerCallbackQuery(callbackQueryId, '⏳ Обрабатываем...', false);
+    // Отвечаем БЕЗ текста сначала, чтобы убрать индикатор загрузки
+    const answerResult = await answerCallbackQuery(callbackQueryId, '', false);
     console.log(`   Callback query answered:`, answerResult ? 'success' : 'failed');
+    
+    if (!answerResult) {
+      console.error(`❌ Failed to answer callback query - Telegram may show error to user`);
+      // Продолжаем обработку даже если ответ не отправился
+    }
 
     // Обрабатываем в зависимости от типа бронирования
     if (bookingType === 'regular') {
