@@ -188,19 +188,22 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
 
       if (subCommand === 'clear') {
         clearLogs()
-        return await sendMessage(chatId, '✅ Логи очищены')
+        await sendMessage(chatId, '✅ Логи очищены')
+        return { status: 200, body: { success: true } }
       }
 
       if (subCommand === 'error' || subCommand === 'errors') {
         const errorLogs = getLogsByLevel('error', 30)
         const message = formatLogsForTelegram(errorLogs)
-        return await sendMessage(chatId, message)
+        await sendMessage(chatId, message)
+        return { status: 200, body: { success: true } }
       }
 
       if (subCommand === 'warn' || subCommand === 'warnings') {
         const warnLogs = getLogsByLevel('warn', 30)
         const message = formatLogsForTelegram(warnLogs)
-        return await sendMessage(chatId, message)
+        await sendMessage(chatId, message)
+        return { status: 200, body: { success: true } }
       }
 
       // Попытка интерпретировать как количество минут
@@ -208,7 +211,8 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
       if (!isNaN(minutes) && minutes > 0) {
         const timeLogs = getLogsByTime(minutes)
         const message = formatLogsForTelegram(timeLogs)
-        return await sendMessage(chatId, message)
+        await sendMessage(chatId, message)
+        return { status: 200, body: { success: true } }
       }
 
       // Попытка интерпретировать как количество записей
@@ -216,7 +220,8 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
       if (!isNaN(count) && count > 0) {
         const recentLogs = getRecentLogs(Math.min(count, 50))
         const message = formatLogsForTelegram(recentLogs)
-        return await sendMessage(chatId, message)
+        await sendMessage(chatId, message)
+        return { status: 200, body: { success: true } }
       }
     }
 
@@ -233,11 +238,14 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
         await new Promise(resolve => setTimeout(resolve, 100))
       }
     } else {
-      return await sendMessage(chatId, message)
+      await sendMessage(chatId, message)
     }
+    
+    return { status: 200, body: { success: true } }
   } catch (error) {
     console.error('Error getting admin logs:', error)
-    return await sendMessage(chatId, '❌ Ошибка получения логов')
+    await sendMessage(chatId, '❌ Ошибка получения логов: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    return { status: 200, body: { success: false, error: 'Error getting logs' } }
   }
 }
 

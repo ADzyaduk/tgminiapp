@@ -202,9 +202,8 @@ async function handleCallbackQuery(event: H3Event, body: any) {
       addLog('error', 'Invalid callback data format', { callbackData, parts });
       console.error('   Expected format: bookingType:action:bookingId');
       console.error('   Received parts:', parts);
-      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', false);
-      setResponseStatus(event, 400);
-      return { ok: false, error: 'Invalid callback_data format.' };
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', true);
+      return { ok: true };
     }
 
     const [bookingType, action, ...bookingIdParts] = parts;
@@ -214,9 +213,8 @@ async function handleCallbackQuery(event: H3Event, body: any) {
     if (!bookingType || !action || !bookingId) {
       console.error('❌ Invalid callback data format (missing parts):', callbackData);
       console.error(`   bookingType: '${bookingType}', action: '${action}', bookingId: '${bookingId}'`);
-      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', false);
-      setResponseStatus(event, 400);
-      return { ok: false, error: 'Invalid callback_data format.' };
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', true);
+      return { ok: true };
     }
 
     // Проверяем формат bookingId (должен быть UUID)
@@ -225,17 +223,15 @@ async function handleCallbackQuery(event: H3Event, body: any) {
       console.error('❌ Invalid booking ID format:', bookingId);
       console.error(`   Callback Data: ${callbackData}`);
       console.error(`   Parsed ID length: ${bookingId.length}`);
-      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный ID бронирования', false);
-      setResponseStatus(event, 400);
-      return { ok: false, error: 'Invalid booking ID format.' };
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный ID бронирования', true);
+      return { ok: true };
     }
 
     // Проверяем валидность action
     if (action !== 'confirm' && action !== 'cancel') {
       console.error('❌ Invalid action:', action);
-      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверное действие', false);
-      setResponseStatus(event, 400);
-      return { ok: false, error: 'Invalid action.' };
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверное действие', true);
+      return { ok: true };
     }
 
     console.log(`🔄 Processing ${action} for ${bookingType} booking ${bookingId}`);
@@ -275,17 +271,16 @@ async function handleCallbackQuery(event: H3Event, body: any) {
       });
     } else {
       console.warn(`⚠️ Unsupported booking type: ${bookingType}`);
-      // callback_query уже отвечен в начале, просто возвращаем ошибку
-      setResponseStatus(event, 400);
-      return { ok: false, error: `Unsupported booking type: ${bookingType}` };
+      await answerCallbackQuery(callbackQueryId, '❌ Неподдерживаемый тип бронирования', true);
+      return { ok: true };
     }
 
     return { ok: true };
   } catch (error: any) {
     console.error('❌ Error handling callback query:', error);
-    addLog('error', 'Error handling callback query', { error: error.message });
-    setResponseStatus(event, 500);
-    return { ok: false, error: 'Internal Server Error' };
+    addLog('error', 'Error handling callback query', { error: error.message, stack: error.stack });
+    // Всё равно возвращаем ok: true для Telegram
+    return { ok: true };
   }
 }
 // #endregion
@@ -300,25 +295,31 @@ export default defineEventHandler(async (event: H3Event) => {
 
     // Обрабатываем callback_query
     if (body.callback_query) {
-      return await handleCallbackQuery(event, body);
+      const result = await handleCallbackQuery(event, body);
+      // ВАЖНО: Всегда возвращаем 200 OK для Telegram, иначе webhook перестанет работать
+      setResponseStatus(event, 200);
+      return result;
     }
 
     // Обрабатываем обычные сообщения (команды)
     if (body.message) {
-      return await handleMessage(event, body);
+      const result = await handleMessage(event, body);
+      setResponseStatus(event, 200);
+      return result;
     }
 
     // Если ни callback_query, ни message - возвращаем OK
     console.log('ℹ️ Webhook received but no callback_query or message');
+    setResponseStatus(event, 200);
     return { ok: true, message: 'No callback_query or message' };
   } catch (error: any) {
     console.error('❌ Unhandled error in webhook handler:', error);
+    addLog('error', 'Unhandled error in webhook', { error: error.message, stack: error.stack });
     
-    // Примечание: callback_query уже был обработан в начале функции,
-    // поэтому не нужно отвечать на него снова
-    
-    setResponseStatus(event, 500);
-    return { ok: false, error: 'Internal Server Error' };
+    // КРИТИЧЕСКИ ВАЖНО: Всегда возвращаем 200 OK для Telegram
+    // Иначе Telegram решит что webhook не работает и перестанет отправлять обновления
+    setResponseStatus(event, 200);
+    return { ok: true, error: 'Internal error handled' };
   }
 });
 // #endregion
