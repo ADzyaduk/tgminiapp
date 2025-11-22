@@ -215,23 +215,48 @@ export async function sendAdminNotification(
     let replyMarkup = undefined
     if (bookingId && bookingType) {
       // Ограничиваем длину callback_data до 64 байт согласно документации Telegram
-      const confirmData = `${bookingType}:confirm:${bookingId}`.substring(0, 64)
-      const cancelData = `${bookingType}:cancel:${bookingId}`.substring(0, 64)
+      // Формат: bookingType:action:bookingId
+      const confirmData = `${bookingType}:confirm:${bookingId}`
+      const cancelData = `${bookingType}:cancel:${bookingId}`
+      
+      // Проверяем длину в байтах (не символах!)
+      const getByteLength = (str: string) => new TextEncoder().encode(str).length
+      const confirmBytes = getByteLength(confirmData)
+      const cancelBytes = getByteLength(cancelData)
+      
+      // Обрезаем до 64 байт если нужно
+      let finalConfirmData = confirmData
+      let finalCancelData = cancelData
+      
+      if (confirmBytes > 64) {
+        // Обрезаем bookingId если нужно
+        const maxBookingIdLength = 64 - `${bookingType}:confirm:`.length
+        const truncatedId = bookingId.substring(0, maxBookingIdLength)
+        finalConfirmData = `${bookingType}:confirm:${truncatedId}`
+        console.warn(`⚠️ Confirm callback_data too long (${confirmBytes} bytes), truncated to: ${finalConfirmData}`)
+      }
+      
+      if (cancelBytes > 64) {
+        const maxBookingIdLength = 64 - `${bookingType}:cancel:`.length
+        const truncatedId = bookingId.substring(0, maxBookingIdLength)
+        finalCancelData = `${bookingType}:cancel:${truncatedId}`
+        console.warn(`⚠️ Cancel callback_data too long (${cancelBytes} bytes), truncated to: ${finalCancelData}`)
+      }
 
       console.log(`🔘 Creating inline buttons:`)
-      console.log(`   ✅ Confirm: ${confirmData}`)
-      console.log(`   ❌ Cancel: ${cancelData}`)
+      console.log(`   ✅ Confirm: ${finalConfirmData} (${getByteLength(finalConfirmData)} bytes)`)
+      console.log(`   ❌ Cancel: ${finalCancelData} (${getByteLength(finalCancelData)} bytes)`)
 
       replyMarkup = {
         inline_keyboard: [
           [
             {
               text: '✅ Подтвердить',
-              callback_data: confirmData
+              callback_data: finalConfirmData
             },
             {
               text: '❌ Отменить',
-              callback_data: cancelData
+              callback_data: finalCancelData
             }
           ]
         ]

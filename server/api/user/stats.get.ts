@@ -34,9 +34,16 @@ export default defineEventHandler(async (event) => {
 
     // Проверяем токен
     const config = useRuntimeConfig()
-    const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-    let tokenPayload: JWTPayload
+    // Используем process.env напрямую, так как runtimeConfig может не подхватить переменную без префикса
+    const jwtSecret = config.jwtSecret || process.env.JWT_SECRET
 
+    if (!jwtSecret) {
+      console.error('JWT_SECRET not configured')
+      setResponseStatus(event, 500)
+      return { success: false, error: 'JWT secret not configured' }
+    }
+
+    let tokenPayload: JWTPayload
     try {
       tokenPayload = jwt.verify(accessToken, jwtSecret) as JWTPayload
     } catch (error) {

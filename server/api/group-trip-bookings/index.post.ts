@@ -24,10 +24,12 @@ export default defineEventHandler(async (event) => {
 
       if (refreshToken) {
         const config = useRuntimeConfig()
-        const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-        const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
+        // Используем process.env напрямую, так как runtimeConfig может не подхватить переменные без префикса
+        const jwtSecret = config.jwtSecret || process.env.JWT_SECRET
+        const jwtRefreshSecret = config.jwtRefreshSecret || process.env.JWT_REFRESH_SECRET
 
-        let tokenPayload: JWTPayload | null = null
+        if (jwtSecret && jwtRefreshSecret) {
+          let tokenPayload: JWTPayload | null = null
 
         // Сначала проверяем access token
         if (accessToken) {
@@ -61,6 +63,7 @@ export default defineEventHandler(async (event) => {
 
           if (!userError && userData) {
             user = userData
+          }
           }
         }
       }

@@ -22,9 +22,14 @@ export interface UserTokenData {
  * @returns Объект с accessToken и refreshToken
  */
 export function generateTokens(user: UserTokenData, config: { jwtSecret?: string; jwtRefreshSecret?: string }) {
-  const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
+  // Используем process.env как fallback, если секреты не переданы в config
+  const jwtSecret = config.jwtSecret || process.env.JWT_SECRET || ''
   // Если jwtRefreshSecret не указан, используем тот же секрет (упрощенный вариант)
-  const jwtRefreshSecret = config.jwtRefreshSecret || jwtSecret
+  const jwtRefreshSecret = config.jwtRefreshSecret || process.env.JWT_REFRESH_SECRET || jwtSecret
+
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET not configured')
+  }
 
   const accessToken = jwt.sign(
     {
@@ -77,8 +82,14 @@ export function getTokenPayload(
   refreshToken: string | undefined,
   config: { jwtSecret?: string; jwtRefreshSecret?: string }
 ): JWTPayload | null {
-  const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-  const jwtRefreshSecret = config.jwtRefreshSecret || jwtSecret
+  // Используем process.env как fallback, если секреты не переданы в config
+  const jwtSecret = config.jwtSecret || process.env.JWT_SECRET || ''
+  const jwtRefreshSecret = config.jwtRefreshSecret || process.env.JWT_REFRESH_SECRET || jwtSecret
+
+  if (!jwtSecret) {
+    console.error('JWT_SECRET not configured in getTokenPayload')
+    return null
+  }
 
   // Сначала проверяем access token
   if (accessToken) {

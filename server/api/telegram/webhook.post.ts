@@ -110,14 +110,29 @@ export default defineEventHandler(async (event: H3Event) => {
     // КРИТИЧЕСКИ ВАЖНО: Немедленно отвечаем на callback query
     await answerCallbackQuery(callbackQueryId, '⏳ Обрабатываем...');
 
-    const [bookingType, action, bookingId] = callbackData.split(':');
+    // Парсим callback_data в формате: bookingType:action:bookingId
+    const parts = callbackData.split(':');
+    
+    if (parts.length < 3) {
+      console.error('❌ Invalid callback data format:', callbackData);
+      console.error('   Expected format: bookingType:action:bookingId');
+      console.error('   Received parts:', parts);
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных');
+      return { statusCode: 400, statusMessage: 'Invalid callback_data format.' };
+    }
+
+    const [bookingType, action, ...bookingIdParts] = parts;
+    const bookingId = bookingIdParts.join(':'); // На случай если bookingId содержит ':'
 
     if (!bookingType || !action || !bookingId) {
       console.error('❌ Invalid callback data format:', callbackData);
+      console.error('   bookingType:', bookingType, 'action:', action, 'bookingId:', bookingId);
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных');
       return { statusCode: 400, statusMessage: 'Invalid callback_data format.' };
     }
 
     console.log(`🔄 Processing ${action} for ${bookingType} booking ${bookingId}`);
+    console.log(`   Callback data: ${callbackData} (${new TextEncoder().encode(callbackData).length} bytes)`);
 
     // Пока поддерживаем только 'regular'
     if (bookingType === 'regular') {

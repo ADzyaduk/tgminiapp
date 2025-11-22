@@ -32,8 +32,14 @@ export default defineEventHandler(async (event) => {
     }
 
     const config = useRuntimeConfig()
-    const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-    const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
+    // Используем process.env напрямую, так как runtimeConfig может не подхватить переменные без префикса
+    const jwtSecret = config.jwtSecret || process.env.JWT_SECRET
+    const jwtRefreshSecret = config.jwtRefreshSecret || process.env.JWT_REFRESH_SECRET
+
+    if (!jwtSecret || !jwtRefreshSecret) {
+      console.error('JWT secrets not configured')
+      return { status: 500, body: { error: 'JWT secrets not configured' } }
+    }
 
     let tokenPayload: JWTPayload | null = null
 

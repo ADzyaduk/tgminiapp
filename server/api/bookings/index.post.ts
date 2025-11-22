@@ -30,33 +30,35 @@ export default defineEventHandler(async (event) => {
 
       if (refreshToken) {
         const config = useRuntimeConfig()
-        const jwtSecret = config.jwtSecret || 'your-jwt-secret-here'
-        const jwtRefreshSecret = config.jwtRefreshSecret || 'your-refresh-secret-here'
+        // Используем process.env напрямую, так как runtimeConfig может не подхватить переменные без префикса
+        const jwtSecret = config.jwtSecret || process.env.JWT_SECRET
+        const jwtRefreshSecret = config.jwtRefreshSecret || process.env.JWT_REFRESH_SECRET
 
-        let tokenPayload: JWTPayload | null = null
+        if (jwtSecret && jwtRefreshSecret) {
+          let tokenPayload: JWTPayload | null = null
 
-        // Сначала проверяем access token
-        if (accessToken) {
-          try {
-            tokenPayload = jwt.verify(accessToken, jwtSecret) as JWTPayload
-          } catch (error) {
-            // Access token expired or invalid
-          }
-        }
-
-        // Если access token недействителен, проверяем refresh token
-        if (!tokenPayload) {
-          try {
-            tokenPayload = jwt.verify(refreshToken, jwtRefreshSecret) as JWTPayload
-            if (tokenPayload.type !== 'refresh') {
-              throw new Error('Invalid token type')
+          // Сначала проверяем access token
+          if (accessToken) {
+            try {
+              tokenPayload = jwt.verify(accessToken, jwtSecret) as JWTPayload
+            } catch (error) {
+              // Access token expired or invalid
             }
-          } catch (error) {
-            // Refresh token invalid, continue as anonymous
           }
-        }
 
-        if (tokenPayload) {
+          // Если access token недействителен, проверяем refresh token
+          if (!tokenPayload) {
+            try {
+              tokenPayload = jwt.verify(refreshToken, jwtRefreshSecret) as JWTPayload
+              if (tokenPayload.type !== 'refresh') {
+                throw new Error('Invalid token type')
+              }
+            } catch (error) {
+              // Refresh token invalid, continue as anonymous
+            }
+          }
+
+          if (tokenPayload) {
           // Получаем пользователя из базы данных
           const supabase = serverSupabaseServiceRole(event)
           const { data: userData, error: userError } = await supabase
@@ -67,6 +69,7 @@ export default defineEventHandler(async (event) => {
 
           if (!userError && userData) {
             user = userData
+          }
           }
         }
       }
