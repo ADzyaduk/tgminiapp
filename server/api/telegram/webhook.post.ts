@@ -31,16 +31,17 @@ type BookingWithDetails = Booking & {
  * Отвечает на нажатие кнопки в Telegram. Это убирает "часики" на кнопке.
  * @param callbackQueryId ID нажатия на кнопку
  * @param text Необязательный текст для уведомления пользователя
+ * @param showAlert Показывать ли как всплывающее уведомление (по умолчанию false)
  */
-async function answerCallbackQuery(callbackQueryId: string, text?: string) {
+async function answerCallbackQuery(callbackQueryId: string, text?: string, showAlert: boolean = false) {
   // Выполняем синхронно, чтобы убедиться что ответ дошел
   try {
     await sendTelegramRequest('answerCallbackQuery', {
       callback_query_id: callbackQueryId,
       text: text || '',
-      show_alert: false // Показывать как всплывающее уведомление или нет
+      show_alert: showAlert
     });
-    console.log(`✅ Answered callback query: ${callbackQueryId}`);
+    console.log(`✅ Answered callback query: ${callbackQueryId}${text ? ` with text: ${text}` : ''}`);
   } catch (error) {
     console.error('❌ Failed to answer callback query:', error);
   }
@@ -107,9 +108,6 @@ export default defineEventHandler(async (event: H3Event) => {
       text: message?.text?.substring(0, 100)
     });
 
-    // КРИТИЧЕСКИ ВАЖНО: Немедленно отвечаем на callback query
-    await answerCallbackQuery(callbackQueryId, '⏳ Обрабатываем...');
-
     // Парсим callback_data в формате: bookingType:action:bookingId
     const parts = callbackData.split(':');
     
@@ -131,10 +129,18 @@ export default defineEventHandler(async (event: H3Event) => {
       return { statusCode: 400, statusMessage: 'Invalid callback_data format.' };
     }
 
+    // Проверяем валидность action
+    if (action !== 'confirm' && action !== 'cancel') {
+      console.error('❌ Invalid action:', action);
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверное действие');
+      return { statusCode: 400, statusMessage: 'Invalid action.' };
+    }
+
     console.log(`🔄 Processing ${action} for ${bookingType} booking ${bookingId}`);
     console.log(`   Callback data: ${callbackData} (${new TextEncoder().encode(callbackData).length} bytes)`);
 
-    // Пока поддерживаем только 'regular'
+    // Обрабатываем в зависимости от типа бронирования
+    // ВАЖНО: Не отвечаем на callback_query здесь, ответ будет в конце обработки
     if (bookingType === 'regular') {
       await handleRegularBooking(event, {
         bookingId,
@@ -144,13 +150,33 @@ export default defineEventHandler(async (event: H3Event) => {
         managerTelegramId: from.id,
         callbackQueryId,
       });
+    } else if (bookingType === 'group_trip') {
+      await handleGroupTripBooking(event, {
+        bookingId,
+        action,
+        managerChatId: message.chat.id,
+        messageId: message.message_id,
+        managerTelegramId: from.id,
+        callbackQueryId,
+      });
     } else {
       console.warn(`⚠️ Unsupported booking type: ${bookingType}`);
+      await answerCallbackQuery(callbackQueryId, `⚠️ Неподдерживаемый тип бронирования: ${bookingType}`, false);
     }
 
     return { statusCode: 200, statusMessage: 'OK' };
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Unhandled error in webhook handler:', error);
+    
+    // Пытаемся ответить на callback_query, если он есть
+    try {
+      if (body?.callback_query?.id) {
+        await answerCallbackQuery(body.callback_query.id, '❌ Произошла ошибка при обработке запроса', false);
+      }
+    } catch (answerError) {
+      console.error('❌ Failed to answer callback query on error:', answerError);
+    }
+    
     return { statusCode: 500, statusMessage: 'Internal Server Error' };
   }
 });
@@ -178,7 +204,7 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   if (fetchError || !booking) {
     console.error(`🚨 Booking not found or fetch error for ID ${ctx.bookingId}:`, fetchError);
-    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка: бронирование не найдено!');
+    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка: бронирование не найдено!', false);
     // Можно дополнительно обновить сообщение, сказав что бронь не найдена
     await updateManagerMessage(ctx, 'not_found');
     return;
@@ -186,7 +212,8 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   // 2. Проверяем, не было ли бронирование уже обработано
   if (booking.status !== 'pending') {
-    await answerCallbackQuery(ctx.callbackQueryId, `Это бронирование уже обработано (статус: ${booking.status}).`);
+    const actionText = ctx.action === 'confirm' ? 'подтвердить' : 'отменить';
+    await answerCallbackQuery(ctx.callbackQueryId, `⚠️ Это бронирование уже обработано (статус: ${booking.status}). Нельзя ${actionText}.`, false);
     // Обновляем сообщение на случай, если там все еще есть кнопки
     await updateManagerMessage(ctx, booking.status, booking);
     return;
@@ -208,15 +235,16 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   if (updateError) {
     console.error(`🚨 DB update error for booking ${ctx.bookingId}:`, updateError);
-    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка базы данных при обновлении статуса!');
+    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка базы данных при обновлении статуса!', false);
     return;
   }
 
   console.log(`✅ Successfully updated booking ${ctx.bookingId} to ${newStatus}`);
 
   // 5. Отвечаем на callback query с подтверждением действия
+  // Это убирает "часики" с кнопки и показывает уведомление пользователю
   const actionText = ctx.action === 'confirm' ? 'подтверждено' : 'отменено';
-  await answerCallbackQuery(ctx.callbackQueryId, `✅ Бронирование успешно ${actionText}!`);
+  await answerCallbackQuery(ctx.callbackQueryId, `✅ Бронирование успешно ${actionText}!`, false);
 
   // 6. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
   await updateManagerMessage(ctx, newStatus, booking);
@@ -224,6 +252,135 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
   // 7. Уведомляем клиента
   const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications');
   await sendClientStatusNotification(booking as any, newStatus);
+}
+
+/**
+ * Обрабатывает callback для групповых поездок
+ */
+async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
+  const supabase = serverSupabaseServiceRole<Database>(event);
+
+  // 1. Получаем бронирование групповой поездки со всеми деталями
+  const { data: booking, error: fetchError } = await supabase
+    .from('group_trip_bookings')
+    .select('*, profile:profiles(*), group_trip:group_trips(*, boat:boats(*))')
+    .eq('id', ctx.bookingId)
+    .single();
+
+  if (fetchError || !booking) {
+    console.error(`🚨 Group trip booking not found or fetch error for ID ${ctx.bookingId}:`, fetchError);
+    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка: бронирование не найдено!', false);
+    await updateGroupTripManagerMessage(ctx, 'not_found');
+    return;
+  }
+
+  // 2. Проверяем, не было ли бронирование уже обработано
+  // Для групповых поездок статусы: confirmed, completed, cancelled
+  // Но кнопки показываются только для confirmed, так что проверяем на cancelled
+  if (booking.status === 'cancelled') {
+    const actionText = ctx.action === 'confirm' ? 'подтвердить' : 'отменить';
+    await answerCallbackQuery(ctx.callbackQueryId, `⚠️ Это бронирование уже отменено. Нельзя ${actionText}.`, false);
+    await updateGroupTripManagerMessage(ctx, booking.status, booking);
+    return;
+  }
+
+  // 3. Обновляем статус
+  // Для групповых поездок: confirm -> confirmed (уже confirmed по умолчанию), cancel -> cancelled
+  let newStatus: string;
+  if (ctx.action === 'confirm') {
+    // Если уже confirmed, ничего не делаем
+    if (booking.status === 'confirmed') {
+      await answerCallbackQuery(ctx.callbackQueryId, '✅ Бронирование уже подтверждено!', false);
+      await updateGroupTripManagerMessage(ctx, booking.status, booking);
+      return;
+    }
+    newStatus = 'confirmed';
+  } else {
+    newStatus = 'cancelled';
+  }
+
+  const { error: updateError } = await supabase
+    .from('group_trip_bookings')
+    .update({ status: newStatus })
+    .eq('id', ctx.bookingId);
+
+  if (updateError) {
+    console.error(`🚨 DB update error for group trip booking ${ctx.bookingId}:`, updateError);
+    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка базы данных при обновлении статуса!', false);
+    return;
+  }
+
+  console.log(`✅ Successfully updated group trip booking ${ctx.bookingId} to ${newStatus}`);
+
+  // 4. Отвечаем на callback query с подтверждением действия
+  // Это убирает "часики" с кнопки и показывает уведомление пользователю
+  const actionText = ctx.action === 'confirm' ? 'подтверждено' : 'отменено';
+  await answerCallbackQuery(ctx.callbackQueryId, `✅ Бронирование успешно ${actionText}!`, false);
+
+  // 5. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
+  await updateGroupTripManagerMessage(ctx, newStatus, booking);
+
+  // 6. Уведомляем клиента
+  const { sendGroupTripStatusNotification } = await import('~/server/utils/telegram-notifications');
+  await sendGroupTripStatusNotification(booking as any, newStatus);
+}
+
+/**
+ * Обновляет сообщение менеджера для групповых поездок
+ */
+async function updateGroupTripManagerMessage(ctx: BookingContext, status: string, booking?: any) {
+  const statusMap: Record<string, { text: string; emoji: string }> = {
+    confirmed: { text: 'ПОДТВЕРЖДЕНО', emoji: '✅' },
+    cancelled: { text: 'ОТМЕНЕНО', emoji: '❌' },
+    completed: { text: 'ЗАВЕРШЕНО', emoji: '🏁' },
+    not_found: { text: 'НЕ НАЙДЕНО', emoji: '❓' },
+  };
+
+  const { text: statusText, emoji } = statusMap[status] || { text: status.toUpperCase(), emoji: '⚠️' };
+
+  let messageBody: string;
+  if (booking) {
+    const clientName = booking.profile?.name || booking.guest_name || 'Имя не указано';
+    const clientTelegram = booking.profile?.telegram_id || booking.guest_phone || 'N/A';
+    const totalTickets = (booking.adult_count || 0) + (booking.child_count || 0);
+
+    const date = booking.group_trip?.start_time 
+      ? new Date(booking.group_trip.start_time).toLocaleDateString('ru-RU')
+      : 'Не указано';
+    const time = booking.group_trip?.start_time && booking.group_trip?.end_time
+      ? `${new Date(booking.group_trip.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} - ${new Date(booking.group_trip.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
+      : 'Не указано';
+
+    messageBody = [
+      `🚤 <b>Лодка:</b> ${booking.group_trip?.boat?.name || 'Неизвестно'}`,
+      `👤 <b>Клиент:</b> ${clientName.trim()}`,
+      `📞 <b>Контакт:</b> ${clientTelegram}`,
+      `📅 <b>Дата:</b> ${date}`,
+      `⏰ <b>Время:</b> ${time}`,
+      `👥 <b>Билеты:</b> ${booking.adult_count || 0} взр. + ${booking.child_count || 0} дет. = ${totalTickets} мест`,
+      `💰 <b>Стоимость:</b> ${booking.total_price} ₽`,
+    ].join('\n');
+  } else {
+    messageBody = `Бронирование групповой поездки с ID: ${ctx.bookingId} не найдено в системе.`;
+  }
+
+  const fullMessage = `${emoji} <b>ГРУППОВАЯ ПОЕЗДКА ${statusText}</b> ${emoji}\n\n${messageBody}`;
+
+  console.log(`📝 Updating group trip message for manager ${ctx.managerChatId}, message ${ctx.messageId}`);
+  console.log(`📄 New message text: ${fullMessage.substring(0, 100)}...`);
+
+  try {
+    await sendTelegramRequest('editMessageText', {
+      chat_id: ctx.managerChatId,
+      message_id: ctx.messageId,
+      text: fullMessage,
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: [] }, // Убираем кнопки
+    });
+    console.log(`✅ Successfully updated group trip manager message`);
+  } catch (error) {
+    console.error(`❌ Failed to update group trip manager message:`, error);
+  }
 }
 
 /**
