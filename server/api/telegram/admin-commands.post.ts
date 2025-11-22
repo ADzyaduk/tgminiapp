@@ -51,6 +51,9 @@ export default defineEventHandler(async (event) => {
       case '/adminremind':
         return await handleSendReminders(chat.id, event)
 
+      case '/adminlogs':
+        return await handleAdminLogs(chat.id, args)
+
       default:
         await sendMessage(chat.id, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.')
     }
@@ -70,6 +73,7 @@ async function handleAdminMenu(chatId: number) {
 /adminstats - Статистика бронирований
 /admintoday - Бронирования на сегодня
 /adminremind - Отправить напоминания
+/adminlogs - Просмотр логов бота
 
 🔔 Вы также получаете автоматические уведомления о новых бронированиях.`
 
@@ -170,6 +174,70 @@ async function handleTodayBookings(chatId: number, supabase: any) {
   } catch (error) {
     console.error('Error getting today bookings:', error)
     return await sendMessage(chatId, '❌ Ошибка получения бронирований')
+  }
+}
+
+// Просмотр логов
+async function handleAdminLogs(chatId: number, args: string[]) {
+  try {
+    const { getRecentLogs, getLogsByLevel, getLogsByTime, formatLogsForTelegram, clearLogs } = await import('~/server/utils/telegram-logs')
+
+    // Обработка аргументов команды
+    if (args.length > 0) {
+      const subCommand = args[0].toLowerCase()
+
+      if (subCommand === 'clear') {
+        clearLogs()
+        return await sendMessage(chatId, '✅ Логи очищены')
+      }
+
+      if (subCommand === 'error' || subCommand === 'errors') {
+        const errorLogs = getLogsByLevel('error', 30)
+        const message = formatLogsForTelegram(errorLogs)
+        return await sendMessage(chatId, message)
+      }
+
+      if (subCommand === 'warn' || subCommand === 'warnings') {
+        const warnLogs = getLogsByLevel('warn', 30)
+        const message = formatLogsForTelegram(warnLogs)
+        return await sendMessage(chatId, message)
+      }
+
+      // Попытка интерпретировать как количество минут
+      const minutes = parseInt(subCommand)
+      if (!isNaN(minutes) && minutes > 0) {
+        const timeLogs = getLogsByTime(minutes)
+        const message = formatLogsForTelegram(timeLogs)
+        return await sendMessage(chatId, message)
+      }
+
+      // Попытка интерпретировать как количество записей
+      const count = parseInt(subCommand)
+      if (!isNaN(count) && count > 0) {
+        const recentLogs = getRecentLogs(Math.min(count, 50))
+        const message = formatLogsForTelegram(recentLogs)
+        return await sendMessage(chatId, message)
+      }
+    }
+
+    // По умолчанию показываем последние 20 логов
+    const recentLogs = getRecentLogs(20)
+    const message = formatLogsForTelegram(recentLogs)
+    
+    if (message.length > 4096) {
+      // Если сообщение слишком длинное, разбиваем на части
+      const parts = message.match(/.{1,4000}/g) || []
+      for (const part of parts) {
+        await sendMessage(chatId, part)
+        // Небольшая задержка между сообщениями
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+    } else {
+      return await sendMessage(chatId, message)
+    }
+  } catch (error) {
+    console.error('Error getting admin logs:', error)
+    return await sendMessage(chatId, '❌ Ошибка получения логов')
   }
 }
 

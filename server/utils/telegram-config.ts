@@ -73,6 +73,10 @@ export const ADMIN_COMMANDS = [
   {
     command: 'adminremind',
     description: 'Отправить напоминания'
+  },
+  {
+    command: 'adminlogs',
+    description: 'Просмотр логов бота'
   }
 ]
 

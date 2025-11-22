@@ -2,6 +2,7 @@ import { defineEventHandler, readBody, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/supabase'
+import { addLog } from '~/server/utils/telegram-logs'
 
 type Booking = Database['public']['Tables']['bookings']['Row']
 type Profile = Database['public']['Tables']['profiles']['Row']
@@ -99,6 +100,7 @@ export default defineEventHandler(async (event: H3Event) => {
     const body = await readBody(event);
 
     console.log('🔔 Webhook received:', JSON.stringify(body, null, 2));
+    addLog('info', 'Webhook received', { hasCallbackQuery: !!body.callback_query });
 
     if (!body.callback_query) {
       console.log('ℹ️ Not a callback query, ignoring');
@@ -109,6 +111,7 @@ export default defineEventHandler(async (event: H3Event) => {
     const { id: callbackQueryId, data: callbackData, message, from } = callback_query;
 
     console.log(`📱 Received callback query: ${callbackData} from user ${from.id}`);
+    addLog('info', `Callback query: ${callbackData}`, { userId: from.id, chatId: message?.chat?.id });
     console.log(`📨 Message details:`, {
       chat_id: message?.chat?.id,
       message_id: message?.message_id,
@@ -120,6 +123,7 @@ export default defineEventHandler(async (event: H3Event) => {
     
     if (parts.length < 3) {
       console.error('❌ Invalid callback data format:', callbackData);
+      addLog('error', 'Invalid callback data format', { callbackData, parts });
       console.error('   Expected format: bookingType:action:bookingId');
       console.error('   Received parts:', parts);
       await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', false);
@@ -264,6 +268,7 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   if (updateError) {
     console.error(`🚨 DB update error for booking ${ctx.bookingId}:`, updateError);
+    addLog('error', `DB update error for booking ${ctx.bookingId}`, { bookingId: ctx.bookingId, error: updateError });
     console.error(`   Error details:`, JSON.stringify(updateError, null, 2));
     // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
     await updateManagerMessage(ctx, 'error', booking);
@@ -278,6 +283,7 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   console.log(`✅ Successfully updated booking ${ctx.bookingId} to ${newStatus}`);
   console.log(`   Updated booking status: ${updatedBooking.status}`);
+  addLog('success', `Booking ${ctx.bookingId} updated to ${newStatus}`, { bookingId: ctx.bookingId, action: ctx.action, newStatus });
 
   // 5. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
   // Используем обновленное бронирование
