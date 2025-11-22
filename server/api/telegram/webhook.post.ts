@@ -1,4 +1,4 @@
-import { defineEventHandler, readBody } from 'h3'
+import { defineEventHandler, readBody, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/supabase'
@@ -95,7 +95,7 @@ export default defineEventHandler(async (event: H3Event) => {
 
     if (!body.callback_query) {
       console.log('ℹ️ Not a callback query, ignoring');
-      return { statusCode: 200, statusMessage: 'OK (not a callback query)' };
+      return { ok: true, message: 'Not a callback query' };
     }
 
     const { callback_query } = body;
@@ -115,8 +115,9 @@ export default defineEventHandler(async (event: H3Event) => {
       console.error('❌ Invalid callback data format:', callbackData);
       console.error('   Expected format: bookingType:action:bookingId');
       console.error('   Received parts:', parts);
-      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных');
-      return { statusCode: 400, statusMessage: 'Invalid callback_data format.' };
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', false);
+      setResponseStatus(event, 400);
+      return { ok: false, error: 'Invalid callback_data format.' };
     }
 
     const [bookingType, action, ...bookingIdParts] = parts;
@@ -125,22 +126,27 @@ export default defineEventHandler(async (event: H3Event) => {
     if (!bookingType || !action || !bookingId) {
       console.error('❌ Invalid callback data format:', callbackData);
       console.error('   bookingType:', bookingType, 'action:', action, 'bookingId:', bookingId);
-      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных');
-      return { statusCode: 400, statusMessage: 'Invalid callback_data format.' };
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверный формат данных', false);
+      setResponseStatus(event, 400);
+      return { ok: false, error: 'Invalid callback_data format.' };
     }
 
     // Проверяем валидность action
     if (action !== 'confirm' && action !== 'cancel') {
       console.error('❌ Invalid action:', action);
-      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверное действие');
-      return { statusCode: 400, statusMessage: 'Invalid action.' };
+      await answerCallbackQuery(callbackQueryId, '❌ Ошибка: неверное действие', false);
+      setResponseStatus(event, 400);
+      return { ok: false, error: 'Invalid action.' };
     }
 
     console.log(`🔄 Processing ${action} for ${bookingType} booking ${bookingId}`);
     console.log(`   Callback data: ${callbackData} (${new TextEncoder().encode(callbackData).length} bytes)`);
 
+    // КРИТИЧЕСКИ ВАЖНО: Отвечаем на callback_query СРАЗУ, чтобы убрать "часики" с кнопки
+    // Telegram требует ответ в течение нескольких секунд, иначе покажет ошибку
+    await answerCallbackQuery(callbackQueryId, '⏳ Обрабатываем...', false);
+
     // Обрабатываем в зависимости от типа бронирования
-    // ВАЖНО: Не отвечаем на callback_query здесь, ответ будет в конце обработки
     if (bookingType === 'regular') {
       await handleRegularBooking(event, {
         bookingId,
@@ -164,20 +170,15 @@ export default defineEventHandler(async (event: H3Event) => {
       await answerCallbackQuery(callbackQueryId, `⚠️ Неподдерживаемый тип бронирования: ${bookingType}`, false);
     }
 
-    return { statusCode: 200, statusMessage: 'OK' };
+    return { ok: true };
   } catch (error: any) {
     console.error('❌ Unhandled error in webhook handler:', error);
     
-    // Пытаемся ответить на callback_query, если он есть
-    try {
-      if (body?.callback_query?.id) {
-        await answerCallbackQuery(body.callback_query.id, '❌ Произошла ошибка при обработке запроса', false);
-      }
-    } catch (answerError) {
-      console.error('❌ Failed to answer callback query on error:', answerError);
-    }
+    // Примечание: callback_query уже был обработан в начале функции,
+    // поэтому не нужно отвечать на него снова
     
-    return { statusCode: 500, statusMessage: 'Internal Server Error' };
+    setResponseStatus(event, 500);
+    return { ok: false, error: 'Internal Server Error' };
   }
 });
 // #endregion
@@ -204,17 +205,15 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   if (fetchError || !booking) {
     console.error(`🚨 Booking not found or fetch error for ID ${ctx.bookingId}:`, fetchError);
-    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка: бронирование не найдено!', false);
-    // Можно дополнительно обновить сообщение, сказав что бронь не найдена
+    // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
     await updateManagerMessage(ctx, 'not_found');
     return;
   }
 
   // 2. Проверяем, не было ли бронирование уже обработано
   if (booking.status !== 'pending') {
-    const actionText = ctx.action === 'confirm' ? 'подтвердить' : 'отменить';
-    await answerCallbackQuery(ctx.callbackQueryId, `⚠️ Это бронирование уже обработано (статус: ${booking.status}). Нельзя ${actionText}.`, false);
     // Обновляем сообщение на случай, если там все еще есть кнопки
+    // callback_query уже отвечен в начале, поэтому просто обновляем сообщение
     await updateManagerMessage(ctx, booking.status, booking);
     return;
   }
@@ -235,16 +234,17 @@ async function handleRegularBooking(event: H3Event, ctx: BookingContext) {
 
   if (updateError) {
     console.error(`🚨 DB update error for booking ${ctx.bookingId}:`, updateError);
-    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка базы данных при обновлении статуса!', false);
+    // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
+    await updateManagerMessage(ctx, 'error', booking);
     return;
   }
 
   console.log(`✅ Successfully updated booking ${ctx.bookingId} to ${newStatus}`);
 
-  // 5. Отвечаем на callback query с подтверждением действия
-  // Это убирает "часики" с кнопки и показывает уведомление пользователю
+  // 5. Показываем финальное уведомление пользователю
+  // Примечание: мы уже ответили на callback_query в начале, поэтому здесь просто обновляем сообщение
   const actionText = ctx.action === 'confirm' ? 'подтверждено' : 'отменено';
-  await answerCallbackQuery(ctx.callbackQueryId, `✅ Бронирование успешно ${actionText}!`, false);
+  // Можно отправить дополнительное уведомление через editMessageText или оставить как есть
 
   // 6. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
   await updateManagerMessage(ctx, newStatus, booking);
@@ -269,7 +269,7 @@ async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
 
   if (fetchError || !booking) {
     console.error(`🚨 Group trip booking not found or fetch error for ID ${ctx.bookingId}:`, fetchError);
-    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка: бронирование не найдено!', false);
+    // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
     await updateGroupTripManagerMessage(ctx, 'not_found');
     return;
   }
@@ -278,8 +278,7 @@ async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
   // Для групповых поездок статусы: confirmed, completed, cancelled
   // Но кнопки показываются только для confirmed, так что проверяем на cancelled
   if (booking.status === 'cancelled') {
-    const actionText = ctx.action === 'confirm' ? 'подтвердить' : 'отменить';
-    await answerCallbackQuery(ctx.callbackQueryId, `⚠️ Это бронирование уже отменено. Нельзя ${actionText}.`, false);
+    // Обновляем сообщение (callback_query уже отвечен в начале)
     await updateGroupTripManagerMessage(ctx, booking.status, booking);
     return;
   }
@@ -290,7 +289,7 @@ async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
   if (ctx.action === 'confirm') {
     // Если уже confirmed, ничего не делаем
     if (booking.status === 'confirmed') {
-      await answerCallbackQuery(ctx.callbackQueryId, '✅ Бронирование уже подтверждено!', false);
+      // Обновляем сообщение (callback_query уже отвечен в начале)
       await updateGroupTripManagerMessage(ctx, booking.status, booking);
       return;
     }
@@ -306,16 +305,17 @@ async function handleGroupTripBooking(event: H3Event, ctx: BookingContext) {
 
   if (updateError) {
     console.error(`🚨 DB update error for group trip booking ${ctx.bookingId}:`, updateError);
-    await answerCallbackQuery(ctx.callbackQueryId, '🚨 Ошибка базы данных при обновлении статуса!', false);
+    // Обновляем сообщение с ошибкой (callback_query уже отвечен в начале)
+    await updateGroupTripManagerMessage(ctx, 'error', booking);
     return;
   }
 
   console.log(`✅ Successfully updated group trip booking ${ctx.bookingId} to ${newStatus}`);
 
-  // 4. Отвечаем на callback query с подтверждением действия
-  // Это убирает "часики" с кнопки и показывает уведомление пользователю
+  // 4. Показываем финальное уведомление пользователю
+  // Примечание: мы уже ответили на callback_query в начале, поэтому здесь просто обновляем сообщение
   const actionText = ctx.action === 'confirm' ? 'подтверждено' : 'отменено';
-  await answerCallbackQuery(ctx.callbackQueryId, `✅ Бронирование успешно ${actionText}!`, false);
+  // Можно отправить дополнительное уведомление через editMessageText или оставить как есть
 
   // 5. Обновляем сообщение у менеджера (убираем кнопки, пишем статус)
   await updateGroupTripManagerMessage(ctx, newStatus, booking);
@@ -334,6 +334,7 @@ async function updateGroupTripManagerMessage(ctx: BookingContext, status: string
     cancelled: { text: 'ОТМЕНЕНО', emoji: '❌' },
     completed: { text: 'ЗАВЕРШЕНО', emoji: '🏁' },
     not_found: { text: 'НЕ НАЙДЕНО', emoji: '❓' },
+    error: { text: 'ОШИБКА', emoji: '🚨' },
   };
 
   const { text: statusText, emoji } = statusMap[status] || { text: status.toUpperCase(), emoji: '⚠️' };
@@ -392,6 +393,7 @@ async function updateManagerMessage(ctx: BookingContext, status: string, booking
     cancelled: { text: 'ОТМЕНЕНО', emoji: '❌' },
     pending: { text: 'ОЖИДАЕТ', emoji: '⏳' },
     not_found: { text: 'НЕ НАЙДЕНО', emoji: '❓' },
+    error: { text: 'ОШИБКА', emoji: '🚨' },
   };
 
   const { text: statusText, emoji } = statusMap[status] || { text: status.toUpperCase(), emoji: '⚠️' };
