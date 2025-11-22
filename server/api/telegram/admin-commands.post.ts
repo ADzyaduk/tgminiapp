@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     const { chat, text, from } = message
 
     if (!text || !text.startsWith('/admin')) {
-      return { status: 200, body: { success: true } }
+      return { ok: true }
     }
 
     const supabase = await serverSupabaseClient(event)
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
 
     if (!adminUser) {
       await sendMessage(chat.id, '❌ У вас нет прав администратора')
-      return { status: 403, body: { error: 'Access denied' } }
+      return { ok: true }
     }
 
     const command = text.split(' ')[0].toLowerCase()
@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
         await sendMessage(chat.id, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.')
     }
 
-    return { status: 200, body: { success: true } }
+    return { ok: true }
   } catch (error) {
     console.error('Error in admin commands handler:', error)
     return { status: 500, body: { error: 'Internal server error' } }
@@ -85,7 +85,8 @@ export async function handleAdminMenu(chatId: number) {
 
 🔔 Вы также получаете автоматические уведомления о новых бронированиях.`
 
-  return await sendMessage(chatId, message)
+  await sendMessage(chatId, message)
+  return { ok: true }
 }
 
 // Статистика бронирований
@@ -200,7 +201,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
       if (subCommand === 'clear') {
         clearLogs()
         await sendMessage(chatId, '✅ Логи очищены')
-        return { status: 200, body: { success: true } }
+        return { ok: true }
       }
 
       if (subCommand === 'error' || subCommand === 'errors') {
@@ -208,7 +209,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
         console.log(`📋 Found ${errorLogs.length} error logs`)
         const message = formatLogsForTelegram(errorLogs)
         await sendMessage(chatId, message)
-        return { status: 200, body: { success: true } }
+        return { ok: true }
       }
 
       if (subCommand === 'warn' || subCommand === 'warnings') {
@@ -216,7 +217,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
         console.log(`📋 Found ${warnLogs.length} warn logs`)
         const message = formatLogsForTelegram(warnLogs)
         await sendMessage(chatId, message)
-        return { status: 200, body: { success: true } }
+        return { ok: true }
       }
 
       // Попытка интерпретировать как количество минут
@@ -226,7 +227,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
         console.log(`📋 Found ${timeLogs.length} logs for last ${minutes} minutes`)
         const message = formatLogsForTelegram(timeLogs)
         await sendMessage(chatId, message)
-        return { status: 200, body: { success: true } }
+        return { ok: true }
       }
 
       // Попытка интерпретировать как количество записей
@@ -236,7 +237,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
         console.log(`📋 Found ${recentLogs.length} recent logs`)
         const message = formatLogsForTelegram(recentLogs)
         await sendMessage(chatId, message)
-        return { status: 200, body: { success: true } }
+        return { ok: true }
       }
     }
 
@@ -247,7 +248,7 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
     
     if (recentLogs.length === 0) {
       await sendMessage(chatId, '📋 Логов пока нет. Логи появляются при работе бота (webhook, команды, кнопки).')
-      return { status: 200, body: { success: true } }
+      return { ok: true }
     }
     
     const message = formatLogsForTelegram(recentLogs)
@@ -266,13 +267,13 @@ export async function handleAdminLogs(chatId: number, args: string[]) {
       await sendMessage(chatId, message)
     }
     
-    return { status: 200, body: { success: true } }
+    return { ok: true }
   } catch (error) {
     console.error('❌ Error getting admin logs:', error)
     console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack')
     const errorMsg = error instanceof Error ? error.message : 'Unknown error'
     await sendMessage(chatId, `❌ Ошибка получения логов: ${errorMsg}\n\nПроверьте консоль сервера для подробностей.`)
-    return { status: 200, body: { success: false, error: errorMsg } }
+    return { ok: true }
   }
 }
 
@@ -282,7 +283,7 @@ export async function handleWebhookCheck(chatId: number) {
     const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) {
       await sendMessage(chatId, '❌ TELEGRAM_BOT_TOKEN не настроен')
-      return { status: 200, body: { success: false } }
+      return { ok: true }
     }
 
     await sendMessage(chatId, '🔍 Проверяю webhook...')
@@ -308,11 +309,11 @@ ${info.url ? '✅ Webhook настроен правильно' : '⚠️ Webhook
       await sendMessage(chatId, `❌ Ошибка получения информации о webhook: ${result.description || 'Unknown error'}`)
     }
 
-    return { status: 200, body: { success: true } }
+    return { ok: true }
   } catch (error) {
     console.error('Error checking webhook:', error)
     await sendMessage(chatId, '❌ Ошибка проверки webhook: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    return { status: 200, body: { success: false } }
+    return { ok: true }
   }
 }
 
@@ -324,7 +325,7 @@ export async function handleTestButtons(chatId: number) {
     const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) {
       await sendMessage(chatId, '❌ TELEGRAM_BOT_TOKEN не настроен')
-      return { status: 200, body: { success: false } }
+      return { ok: true }
     }
 
     const testBookingId = '00000000-0000-0000-0000-000000000001'
@@ -381,11 +382,11 @@ export async function handleTestButtons(chatId: number) {
       await sendMessage(chatId, `❌ Ошибка отправки: ${result.description || 'Unknown error'}`)
     }
 
-    return { status: 200, body: { success: true } }
+    return { ok: true }
   } catch (error) {
     console.error('Error in test buttons:', error)
     await sendMessage(chatId, '❌ Ошибка тестирования кнопок: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    return { status: 200, body: { success: false } }
+    return { ok: true }
   }
 }
 

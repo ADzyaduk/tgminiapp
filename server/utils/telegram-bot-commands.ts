@@ -265,10 +265,10 @@ export async function sendWebAppButton(chatId: number, text: string, buttonText:
       console.error('❌ Telegram API error:', data)
     }
     
-    return { status: 200, body: data }
+    return { ok: data.ok || false }
   } catch (error) {
     console.error('Error sending message to Telegram:', error)
-    return { status: 500, body: { error: 'Failed to send message' } }
+    return { ok: false }
   }
 }
 
@@ -290,10 +290,10 @@ export async function sendMessage(chatId: number, text: string) {
     })
 
     const data = await response.json()
-    return { status: 200, body: data }
+    return { ok: data.ok || false }
   } catch (error) {
     console.error('Error sending message to Telegram:', error)
-    return { status: 500, body: { error: 'Failed to send message' } }
+    return { ok: false }
   }
 }
 
