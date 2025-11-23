@@ -4,8 +4,7 @@
 
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { H3Event } from 'h3'
-import { buildCallbackData, sendMessage } from '~/server/utils/telegram-client'
-import type { InlineKeyboardMarkup } from '~/server/utils/telegram-client'
+import { sendMessage } from '~/server/utils/telegram-client'
 
 /**
  * Форматирует уведомление о новом бронировании
@@ -64,9 +63,7 @@ ID: ${booking.id}
 Телефон: ${booking.guest_phone || 'Не указан'}
 Лодка: ${booking.boat?.name || 'Не указано'}
 Дата: ${formattedDate}
-Цена: ${booking.price} ₽
-
-<i>Нажмите на кнопки ниже для управления бронированием</i>`
+Цена: ${booking.price} ₽`
 }
 
 /**
@@ -107,77 +104,22 @@ ID: ${booking.id}
 Стоимость: ${booking.total_price} ₽`
 }
 
-type BookingActionType = 'regular' | 'group_trip'
 type ParseMode = 'HTML' | 'Markdown' | 'MarkdownV2'
-
-function getWebAppBaseUrl () {
-  return (process.env.TELEGRAM_WEBAPP_URL || '').replace(/\/$/, '')
-}
-
-function shouldUseAppLinks () {
-  return process.env.TELEGRAM_USE_APP_LINKS === 'true'
-}
-
-function buildBookingActionKeyboard(
-  bookingId?: string,
-  bookingType: BookingActionType = 'regular'
-): InlineKeyboardMarkup | undefined {
-  if (!bookingId) return undefined
-
-  const useLinks = shouldUseAppLinks()
-  const baseUrl = getWebAppBaseUrl()
-
-  if (useLinks && baseUrl) {
-    const confirmUrl = `${baseUrl}/admin/bookings?action=confirm&id=${bookingId}&type=${bookingType}`
-    const cancelUrl = `${baseUrl}/admin/bookings?action=cancel&id=${bookingId}&type=${bookingType}`
-
-    console.log('🔗 Creating app-link buttons for booking', bookingId)
-
-    return {
-      inline_keyboard: [
-        [
-          { text: '✅ Подтвердить', url: confirmUrl },
-          { text: '❌ Отменить', url: cancelUrl }
-        ]
-      ]
-    }
-  }
-
-  if (useLinks && !baseUrl) {
-    console.warn('⚠️ TELEGRAM_WEBAPP_URL missing, fallback to callback buttons')
-  }
-
-  const confirmData = buildCallbackData(bookingType, 'confirm', bookingId)
-  const cancelData = buildCallbackData(bookingType, 'cancel', bookingId)
-
-  console.log('🔘 Creating callback buttons for booking', bookingId)
-
-  return {
-    inline_keyboard: [
-      [
-        { text: '✅ Подтвердить', callback_data: confirmData },
-        { text: '❌ Отменить', callback_data: cancelData }
-      ]
-    ]
-  }
-}
 
 type DeliverMessageOptions = {
   chatId: number | string
   text: string
   parseMode?: ParseMode
-  replyMarkup?: InlineKeyboardMarkup
 }
 
 async function deliverMessage (options: DeliverMessageOptions) {
-  const { chatId, text, parseMode = 'HTML', replyMarkup } = options
+  const { chatId, text, parseMode = 'HTML' } = options
 
   try {
     const result = await sendMessage({
       chatId,
       text,
-      parseMode,
-      replyMarkup
+      parseMode
     })
 
     return Boolean(result)
@@ -264,16 +206,14 @@ export async function sendAdminNotification(
     event?: H3Event
   } = {}
 ): Promise<boolean> {
-  const { parseMode = 'HTML', boatId, bookingId, bookingType = 'regular', event } = options
+  const { parseMode = 'HTML', boatId, event } = options
 
   try {
-    const replyMarkup = buildBookingActionKeyboard(bookingId, bookingType)
     const sendToChat = async (chatId: string | number) => {
       return await deliverMessage({
         chatId,
         text: message,
-        parseMode,
-        replyMarkup
+        parseMode
       })
     }
 
