@@ -110,16 +110,18 @@ type DeliverMessageOptions = {
   chatId: number | string
   text: string
   parseMode?: ParseMode
+  replyMarkup?: any
 }
 
 async function deliverMessage (options: DeliverMessageOptions) {
-  const { chatId, text, parseMode = 'HTML' } = options
+  const { chatId, text, parseMode = 'HTML', replyMarkup } = options
 
   try {
     const result = await sendMessage({
       chatId,
       text,
-      parseMode
+      parseMode,
+      replyMarkup
     })
 
     return Boolean(result)
@@ -203,17 +205,26 @@ export async function sendAdminNotification(
     boatId?: string,
     bookingId?: string,
     bookingType?: 'regular' | 'group_trip',
-    event?: H3Event
+    event?: H3Event,
+    withButtons?: boolean
   } = {}
 ): Promise<boolean> {
-  const { parseMode = 'HTML', boatId, event } = options
+  const { parseMode = 'HTML', boatId, event, bookingId, bookingType, withButtons = false } = options
 
   try {
+    // Создаем inline keyboard если нужно и есть bookingId
+    let replyMarkup = undefined
+    if (withButtons && bookingId && bookingType) {
+      const { createBookingInlineKeyboard } = await import('~/server/utils/telegram-client')
+      replyMarkup = createBookingInlineKeyboard(bookingId, bookingType)
+    }
+
     const sendToChat = async (chatId: string | number) => {
       return await deliverMessage({
         chatId,
         text: message,
-        parseMode
+        parseMode,
+        replyMarkup
       })
     }
 

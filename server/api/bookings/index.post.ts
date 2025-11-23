@@ -154,7 +154,8 @@ export default defineEventHandler(async (event) => {
         boatId: (booking as any).boat_id,
         bookingId: (booking as any).id,
         bookingType: 'regular',
-        event
+        event,
+        withButtons: true
       })
 
       console.log('📨 Notification result:', notificationResult)

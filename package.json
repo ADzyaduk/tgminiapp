@@ -26,6 +26,7 @@
     "dayjs": "^1.11.19",
     "gsap": "^3.13.0",
     "jsonwebtoken": "^9.0.2",
+    "node-telegram-bot-api": "^0.66.0",
     "nuxt": "^3.16.2",
     "pinia": "^3.0.4",
     "vue": "^3.5.13",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@iconify-json/heroicons": "^1.2.3",
     "@iconify-json/lucide": "^1.2.73",
-    "@types/lodash": "^4.17.20"
+    "@types/lodash": "^4.17.20",
+    "@types/node-telegram-bot-api": "^0.64.13"
   }
 }

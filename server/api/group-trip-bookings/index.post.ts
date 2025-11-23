@@ -159,7 +159,8 @@ export default defineEventHandler(async (event) => {
         boatId: trip.boat_id,
         bookingId: booking.id,
         bookingType: 'group_trip',
-        event
+        event,
+        withButtons: true
       })
 
     } catch (notifyError) {

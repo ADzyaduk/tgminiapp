@@ -33,3 +33,43 @@
 ## Тестирование уведомлений
 
 Используйте API endpoint `/api/telegram/test-notifications` для тестирования различных типов уведомлений.
+
+## Inline кнопки в уведомлениях о бронировании
+
+В уведомлениях о новых бронированиях добавлены inline кнопки "✅ Подтвердить" и "❌ Отменить".
+
+### Настройка webhook для обработки callback
+
+Для работы inline кнопок необходимо настроить webhook в Telegram Bot API:
+
+```bash
+# Установить webhook (замените YOUR_DOMAIN на ваш домен)
+curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://YOUR_DOMAIN/api/telegram/callback",
+    "allowed_updates": ["callback_query"]
+  }'
+```
+
+### Проверка webhook
+
+```bash
+# Проверить текущий webhook
+curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
+```
+
+### Как это работает
+
+1. При создании нового бронирования отправляется уведомление менеджерам с inline кнопками
+2. При нажатии на кнопку Telegram отправляет callback_query на `/api/telegram/callback`
+3. Endpoint обрабатывает callback, обновляет статус бронирования в БД
+4. Отправляется уведомление клиенту об изменении статуса
+5. Сообщение в Telegram обновляется, кнопки убираются
+
+### Формат callback_data
+
+- `booking_confirm_regular_<bookingId>` - подтвердить обычное бронирование
+- `booking_cancel_regular_<bookingId>` - отменить обычное бронирование
+- `booking_confirm_group_trip_<bookingId>` - подтвердить групповую поездку
+- `booking_cancel_group_trip_<bookingId>` - отменить групповую поездку
