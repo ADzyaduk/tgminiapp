@@ -2,87 +2,50 @@ import { defineEventHandler, readBody, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/supabase'
-import { addLog } from '~/server/utils/telegram-logs'
-
+import { answerCallbackQuery, editMessageText, sendMessage } from '~/server/utils/telegram-client'
 type Booking = Database['public']['Tables']['bookings']['Row']
 type Profile = Database['public']['Tables']['profiles']['Row']
 type Boat = Database['public']['Tables']['boats']['Row']
 
-type BookingWithDetails = Booking & {
-  profile: Profile | null
-  boat: Boat | null
+type CallbackAction = 'confirm' | 'cancel'
+type CallbackBookingType = 'regular' | 'group_trip'
+
+type CallbackPayload = {
+  bookingType: CallbackBookingType
+  action: CallbackAction
+  bookingId: string
 }
 
-/**
- * Telegram Bot API Helper Functions
- */
-const TELEGRAM_API_URL = 'https://api.telegram.org/bot'
-
-async function callTelegramAPI(method: string, params: Record<string, any>): Promise<any> {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  if (!token) {
-    console.error('❌ TELEGRAM_BOT_TOKEN not set')
+function parseCallbackPayload (rawData: string): CallbackPayload | null {
+  if (!rawData || typeof rawData !== 'string') {
     return null
   }
 
-  const url = `${TELEGRAM_API_URL}${token}/${method}`
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
-    })
-
-    const result = await response.json()
-    
-    if (!result.ok) {
-      console.error(`❌ Telegram API error (${method}):`, result)
-      return null
-    }
-
-    return result.result
-  } catch (error) {
-    console.error(`❌ Network error calling ${method}:`, error)
+  const parts = rawData.split(':')
+  if (parts.length < 3) {
     return null
   }
-}
 
-async function sendMessage(chatId: number, text: string, options: {
-  parse_mode?: 'HTML' | 'Markdown'
-  reply_markup?: any
-} = {}): Promise<boolean> {
-  const result = await callTelegramAPI('sendMessage', {
-    chat_id: chatId,
-    text,
-    ...options
-  })
-  return result !== null
-}
+  const [bookingType, action, ...idParts] = parts
+  const bookingId = idParts.join(':').trim()
 
-async function answerCallbackQuery(callbackQueryId: string, options: {
-  text?: string
-  show_alert?: boolean
-  url?: string
-} = {}): Promise<boolean> {
-  const result = await callTelegramAPI('answerCallbackQuery', {
-    callback_query_id: callbackQueryId,
-    ...options
-  })
-  return result !== null
-}
+  if (!bookingType || !bookingId) {
+    return null
+  }
 
-async function editMessageText(chatId: number, messageId: number, text: string, options: {
-  parse_mode?: 'HTML'
-  reply_markup?: any
-} = {}): Promise<boolean> {
-  const result = await callTelegramAPI('editMessageText', {
-    chat_id: chatId,
-    message_id: messageId,
-    text,
-    ...options
-  })
-  return result !== null
+  if (action !== 'confirm' && action !== 'cancel') {
+    return null
+  }
+
+  if (bookingType !== 'regular' && bookingType !== 'group_trip') {
+    return null
+  }
+
+  return {
+    bookingType,
+    action,
+    bookingId
+  }
 }
 
 /**
@@ -98,33 +61,31 @@ async function handleCallbackQuery(event: H3Event, update: any) {
   const { id, data, message, from } = callback_query
 
   console.log('📱 Callback query received:', { id, data, from_id: from.id })
-  addLog('info', 'Callback query', { id, data, userId: from.id })
+  await answerCallbackQuery({ callbackQueryId: id })
 
-  // СРАЗУ отвечаем на callback_query (обязательно по документации Telegram)
-  await answerCallbackQuery(id, { text: '' })
-
-  // Парсим callback_data: bookingType:action:bookingId
-  const parts = data.split(':')
-  if (parts.length < 3) {
-    console.error('❌ Invalid callback_data format:', data)
-    await answerCallbackQuery(id, { text: '❌ Ошибка: неверный формат', show_alert: true })
+  if (!message?.chat?.id || !message.message_id) {
+    console.error('❌ Callback without message context:', { id, data })
+    await answerCallbackQuery({
+      callbackQueryId: id,
+      text: '❌ Сообщение недоступно',
+      showAlert: true
+    })
     return { ok: true }
   }
 
-  const [bookingType, action, ...idParts] = parts
-  const bookingId = idParts.join(':').trim()
+  const payload = parseCallbackPayload(data)
 
-  if (!bookingType || !action || !bookingId) {
-    console.error('❌ Missing parts in callback_data:', { bookingType, action, bookingId })
-    await answerCallbackQuery(id, { text: '❌ Ошибка: неверные данные', show_alert: true })
+  if (!payload) {
+    console.error('❌ Invalid callback payload:', data)
+    await answerCallbackQuery({
+      callbackQueryId: id,
+      text: '❌ Ошибка: неверные данные',
+      showAlert: true
+    })
     return { ok: true }
   }
 
-  if (action !== 'confirm' && action !== 'cancel') {
-    console.error('❌ Invalid action:', action)
-    await answerCallbackQuery(id, { text: '❌ Ошибка: неверное действие', show_alert: true })
-    return { ok: true }
-  }
+  const { bookingType, action, bookingId } = payload
 
   console.log(`🔄 Processing ${action} for ${bookingType} booking ${bookingId}`)
 
@@ -142,14 +103,20 @@ async function handleCallbackQuery(event: H3Event, update: any) {
 
       if (error || !booking) {
         console.error('❌ Booking not found:', bookingId)
-        await editMessageText(message.chat.id, message.message_id, 
-          `❌ Бронирование не найдено: ${bookingId}`)
+        await editMessageText({
+          chatId: message.chat.id,
+          messageId: message.message_id,
+          text: `❌ Бронирование не найдено: ${bookingId}`
+        })
         return { ok: true }
       }
 
       if (booking.status !== 'pending') {
-        await editMessageText(message.chat.id, message.message_id,
-          `ℹ️ Бронирование уже обработано. Статус: ${booking.status}`)
+        await editMessageText({
+          chatId: message.chat.id,
+          messageId: message.message_id,
+          text: `ℹ️ Бронирование уже обработано. Статус: ${booking.status}`
+        })
         return { ok: true }
       }
 
@@ -162,8 +129,11 @@ async function handleCallbackQuery(event: H3Event, update: any) {
 
       if (updateError || !updated) {
         console.error('❌ Update error:', updateError)
-        await editMessageText(message.chat.id, message.message_id,
-          `❌ Ошибка обновления статуса`)
+        await editMessageText({
+          chatId: message.chat.id,
+          messageId: message.message_id,
+          text: '❌ Ошибка обновления статуса'
+        })
         return { ok: true }
       }
 
@@ -176,9 +146,12 @@ async function handleCallbackQuery(event: H3Event, update: any) {
         `📅 Дата: ${new Date(updated.start_time).toLocaleDateString('ru-RU')}\n` +
         `⏰ Время: ${new Date(updated.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`
 
-      await editMessageText(message.chat.id, message.message_id, messageText, {
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [] }
+      await editMessageText({
+        chatId: message.chat.id,
+        messageId: message.message_id,
+        text: messageText,
+        parseMode: 'HTML',
+        replyMarkup: { inline_keyboard: [] }
       })
 
       // Уведомляем клиента
@@ -187,7 +160,6 @@ async function handleCallbackQuery(event: H3Event, update: any) {
         await sendClientStatusNotification(updated as any, newStatus)
       }
 
-      addLog('success', `Booking ${bookingId} ${newStatus}`, { bookingId, action })
       console.log(`✅ Booking ${bookingId} updated to ${newStatus}`)
 
     } else if (bookingType === 'group_trip') {
@@ -200,14 +172,20 @@ async function handleCallbackQuery(event: H3Event, update: any) {
 
       if (error || !booking) {
         console.error('❌ Group trip booking not found:', bookingId)
-        await editMessageText(message.chat.id, message.message_id,
-          `❌ Бронирование не найдено: ${bookingId}`)
+        await editMessageText({
+          chatId: message.chat.id,
+          messageId: message.message_id,
+          text: `❌ Бронирование не найдено: ${bookingId}`
+        })
         return { ok: true }
       }
 
       if (booking.status === 'cancelled') {
-        await editMessageText(message.chat.id, message.message_id,
-          `ℹ️ Бронирование уже отменено`)
+        await editMessageText({
+          chatId: message.chat.id,
+          messageId: message.message_id,
+          text: 'ℹ️ Бронирование уже отменено'
+        })
         return { ok: true }
       }
 
@@ -220,8 +198,11 @@ async function handleCallbackQuery(event: H3Event, update: any) {
 
       if (updateError || !updated) {
         console.error('❌ Update error:', updateError)
-        await editMessageText(message.chat.id, message.message_id,
-          `❌ Ошибка обновления статуса`)
+        await editMessageText({
+          chatId: message.chat.id,
+          messageId: message.message_id,
+          text: '❌ Ошибка обновления статуса'
+        })
         return { ok: true }
       }
 
@@ -232,9 +213,12 @@ async function handleCallbackQuery(event: H3Event, update: any) {
         `👤 Клиент: ${clientName}\n` +
         `📅 Дата: ${updated.group_trip?.start_time ? new Date(updated.group_trip.start_time).toLocaleDateString('ru-RU') : 'Не указано'}`
 
-      await editMessageText(message.chat.id, message.message_id, messageText, {
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: [] }
+      await editMessageText({
+        chatId: message.chat.id,
+        messageId: message.message_id,
+        text: messageText,
+        parseMode: 'HTML',
+        replyMarkup: { inline_keyboard: [] }
       })
 
       if (updated.profile?.telegram_id) {
@@ -242,13 +226,11 @@ async function handleCallbackQuery(event: H3Event, update: any) {
         await sendGroupTripStatusNotification(updated as any, newStatus)
       }
 
-      addLog('success', `Group trip booking ${bookingId} ${newStatus}`, { bookingId, action })
     }
 
     return { ok: true }
   } catch (error: any) {
     console.error('❌ Error processing callback:', error)
-    addLog('error', 'Callback processing error', { error: error.message })
     return { ok: true }
   }
 }
@@ -268,8 +250,6 @@ async function handleMessage(event: H3Event, update: any) {
   const args = text.split(' ').slice(1)
 
   console.log(`💬 Message received: ${command} from ${from.id}`)
-  addLog('info', 'Message received', { command, userId: from.id })
-
   const supabase = serverSupabaseServiceRole<Database>(event)
 
   // Admin commands
@@ -282,7 +262,7 @@ async function handleMessage(event: H3Event, update: any) {
       .single()
 
     if (!adminUser) {
-      await sendMessage(chat.id, '❌ У вас нет прав администратора')
+      await sendMessage({ chatId: chat.id, text: '❌ У вас нет прав администратора' })
       return { ok: true }
     }
 
@@ -297,14 +277,10 @@ async function handleMessage(event: H3Event, update: any) {
         return await adminCommands.handleTodayBookings(chat.id, supabase)
       case '/adminremind':
         return await adminCommands.handleSendReminders(chat.id, event)
-      case '/adminlogs':
-        return await adminCommands.handleAdminLogs(chat.id, args)
       case '/adminwebhook':
         return await adminCommands.handleWebhookCheck(chat.id)
-      case '/admintest':
-        return await adminCommands.handleTestButtons(chat.id)
       default:
-        await sendMessage(chat.id, '❓ Неизвестная команда. Используйте /admin')
+        await sendMessage({ chatId: chat.id, text: '❓ Неизвестная команда. Используйте /admin' })
         return { ok: true }
     }
   }
@@ -322,7 +298,7 @@ async function handleMessage(event: H3Event, update: any) {
     case '/status':
       return await botCommands.handleStatusCommand(chat.id, from, supabase)
     default:
-      await sendMessage(chat.id, '👋 Привет! Используйте /start для открытия приложения.')
+      await sendMessage({ chatId: chat.id, text: '👋 Привет! Используйте /start для открытия приложения.' })
       return { ok: true }
   }
 }
@@ -369,7 +345,6 @@ export default defineEventHandler(async (event: H3Event) => {
   } catch (error: any) {
     console.error('❌ Webhook error:', error)
     console.error('❌ Stack:', error.stack)
-    addLog('error', 'Webhook error', { error: error.message, stack: error.stack })
     
     // ВСЕГДА возвращаем 200 OK, иначе Telegram перестанет отправлять обновления
     return { ok: true }

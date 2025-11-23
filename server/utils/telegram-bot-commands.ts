@@ -1,6 +1,4 @@
-import { serverSupabaseClient } from '#supabase/server'
-import { addLog } from '~/server/utils/telegram-logs'
-
+import { sendInlineKeyboard, sendMessage } from '~/server/utils/telegram-client'
 // #region Command Handlers
 
 export async function handleStartCommand(chatId: number, from: any, supabase: any) {
@@ -66,7 +64,7 @@ export async function handleHelpCommand(chatId: number) {
 
 📱 Все бронирования делаются в приложении!`
 
-  return await sendMessage(chatId, message)
+  return await sendMessage({ chatId, text: message })
 }
 
 export async function handleMyBookingsCommand(chatId: number, from: any, supabase: any) {
@@ -82,7 +80,7 @@ export async function handleMyBookingsCommand(chatId: number, from: any, supabas
 
 Пожалуйста, сначала зайдите в приложение через кнопку "Открыть приложение" в команде /start и создайте профиль.`
 
-    return await sendMessage(chatId, message)
+    return await sendMessage({ chatId, text: message })
   }
 
   // Получаем бронирования пользователя
@@ -94,7 +92,10 @@ export async function handleMyBookingsCommand(chatId: number, from: any, supabas
     .limit(5)
 
   if (!bookings || bookings.length === 0) {
-    return await sendMessage(chatId, '📋 У вас пока нет бронирований.\n\nИспользуйте /start чтобы открыть приложение и забронировать лодку.')
+    return await sendMessage({
+      chatId,
+      text: '📋 У вас пока нет бронирований.\n\nИспользуйте /start чтобы открыть приложение и забронировать лодку.'
+    })
   }
 
   let message = '📋 <b>Ваши последние бронирования:</b>\n\n'
@@ -125,7 +126,7 @@ export async function handleMyBookingsCommand(chatId: number, from: any, supabas
 
   message += '\nИспользуйте /start для создания новых бронирований.'
 
-  return await sendMessage(chatId, message)
+  return await sendMessage({ chatId, text: message })
 }
 
 export async function handleStatusCommand(chatId: number, from: any, supabase: any) {
@@ -137,7 +138,7 @@ export async function handleStatusCommand(chatId: number, from: any, supabase: a
     .single()
 
   if (!user) {
-    return await sendMessage(chatId, '❌ Вы не зарегистрированы в системе.')
+    return await sendMessage({ chatId, text: '❌ Вы не зарегистрированы в системе.' })
   }
 
   // Получаем последнее бронирование
@@ -150,7 +151,7 @@ export async function handleStatusCommand(chatId: number, from: any, supabase: a
     .single()
 
   if (!booking) {
-    return await sendMessage(chatId, '📋 У вас нет бронирований.')
+    return await sendMessage({ chatId, text: '📋 У вас нет бронирований.' })
   }
 
   const statusEmoji: Record<string, string> = {
@@ -179,7 +180,7 @@ ${booking.status === 'pending' ? '⏳ Ожидайте подтверждени�
 ${booking.status === 'confirmed' ? '✅ Ваше бронирование подтверждено! Увидимся в назначенное время.' : ''}
 ${booking.status === 'cancelled' ? '❌ К сожалению, бронирование было отменено.' : ''}`
 
-  return await sendMessage(chatId, message)
+  return await sendMessage({ chatId, text: message })
 }
 
 // #endregion
@@ -227,74 +228,29 @@ async function saveTelegramUser(from: any, supabase: any) {
 }
 
 export async function sendWebAppButton(chatId: number, text: string, buttonText: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL || 'https://your-app-url.com'
+  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL
 
-  const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
+  if (!webAppUrl) {
+    console.error('❌ TELEGRAM_WEBAPP_URL is not configured')
+    return { ok: false }
+  }
 
-  // ВАЖНО: web_app кнопки не всегда работают внутри чата с ботом
-  // Используем обычную URL кнопку как fallback - она всегда работает
   const keyboard = {
     inline_keyboard: [
       [
         {
           text: buttonText,
-          url: webAppUrl  // Обычная ссылка работает везде
+          url: webAppUrl
         }
       ]
     ]
   }
 
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: 'HTML',
-        reply_markup: keyboard
-      })
-    })
-
-    const data = await response.json()
-    
-    if (!data.ok) {
-      console.error('❌ Telegram API error:', data)
-    }
-    
-    return { ok: data.ok || false }
-  } catch (error) {
-    console.error('Error sending message to Telegram:', error)
-    return { ok: false }
-  }
-}
-
-export async function sendMessage(chatId: number, text: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: 'HTML'
-      })
-    })
-
-    const data = await response.json()
-    return { ok: data.ok || false }
-  } catch (error) {
-    console.error('Error sending message to Telegram:', error)
-    return { ok: false }
-  }
+  return await sendInlineKeyboard({
+    chatId,
+    text,
+    keyboard
+  })
 }
 
 // #endregion

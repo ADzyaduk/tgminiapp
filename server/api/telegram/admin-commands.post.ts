@@ -1,5 +1,6 @@
 import { defineEventHandler, readBody } from 'h3'
 import { serverSupabaseClient } from '#supabase/server'
+import { sendMessage } from '~/server/utils/telegram-client'
 
 /**
  * Обработчик специальных команд для администраторов
@@ -31,7 +32,7 @@ export default defineEventHandler(async (event) => {
       .single()
 
     if (!adminUser) {
-      await sendMessage(chat.id, '❌ У вас нет прав администратора')
+      await sendMessage({ chatId: chat.id, text: '❌ У вас нет прав администратора' })
       return { ok: true }
     }
 
@@ -51,17 +52,14 @@ export default defineEventHandler(async (event) => {
       case '/adminremind':
         return await handleSendReminders(chat.id, event)
 
-      case '/adminlogs':
-        return await handleAdminLogs(chat.id, args)
-
       case '/adminwebhook':
         return await handleWebhookCheck(chat.id)
 
-      case '/admintest':
-        return await handleTestButtons(chat.id)
-
       default:
-        await sendMessage(chat.id, '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.')
+        await sendMessage({
+          chatId: chat.id,
+          text: '❓ Неизвестная команда администратора. Используйте /admin для просмотра доступных команд.'
+        })
     }
 
     return { ok: true }
@@ -79,13 +77,11 @@ export async function handleAdminMenu(chatId: number) {
 /adminstats - Статистика бронирований
 /admintoday - Бронирования на сегодня
 /adminremind - Отправить напоминания
-/adminlogs - Просмотр логов бота
 /adminwebhook - Проверка webhook
-/admintest - Тест кнопок
 
 🔔 Вы также получаете автоматические уведомления о новых бронированиях.`
 
-  await sendMessage(chatId, message)
+  await sendMessage({ chatId, text: message })
   return { ok: true }
 }
 
@@ -107,7 +103,7 @@ export async function handleAdminStats(chatId: number, supabase: any) {
       .gte('created_at', new Date().toISOString().split('T')[0])
 
     if (!allBookings) {
-      return await sendMessage(chatId, '❌ Ошибка получения статистики')
+      return await sendMessage({ chatId, text: '❌ Ошибка получения статистики' })
     }
 
     const total = allBookings.length
@@ -134,10 +130,10 @@ export async function handleAdminStats(chatId: number, supabase: any) {
 
 🎯 Конверсия: ${total > 0 ? Math.round((confirmed / total) * 100) : 0}%`
 
-    return await sendMessage(chatId, message)
+    return await sendMessage({ chatId, text: message })
   } catch (error) {
     console.error('Error getting admin stats:', error)
-    return await sendMessage(chatId, '❌ Ошибка получения статистики')
+    return await sendMessage({ chatId, text: '❌ Ошибка получения статистики' })
   }
 }
 
@@ -160,7 +156,7 @@ export async function handleTodayBookings(chatId: number, supabase: any) {
       .order('start_time', { ascending: true })
 
     if (!bookings || bookings.length === 0) {
-      return await sendMessage(chatId, '📅 На сегодня нет подтвержденных бронирований')
+      return await sendMessage({ chatId, text: '📅 На сегодня нет подтвержденных бронирований' })
     }
 
     let message = `📅 <b>Бронирования на сегодня (${bookings.length})</b>\n\n`
@@ -179,101 +175,10 @@ export async function handleTodayBookings(chatId: number, supabase: any) {
 `
     })
 
-    return await sendMessage(chatId, message)
+    return await sendMessage({ chatId, text: message })
   } catch (error) {
     console.error('Error getting today bookings:', error)
-    return await sendMessage(chatId, '❌ Ошибка получения бронирований')
-  }
-}
-
-// Просмотр логов
-export async function handleAdminLogs(chatId: number, args: string[]) {
-  try {
-    console.log(`📋 Admin logs requested by ${chatId}, args:`, args)
-    
-    const { getRecentLogs, getLogsByLevel, getLogsByTime, formatLogsForTelegram, clearLogs } = await import('~/server/utils/telegram-logs')
-
-    // Обработка аргументов команды
-    if (args.length > 0) {
-      const subCommand = args[0].toLowerCase()
-      console.log(`📋 Processing subcommand: ${subCommand}`)
-
-      if (subCommand === 'clear') {
-        clearLogs()
-        await sendMessage(chatId, '✅ Логи очищены')
-        return { ok: true }
-      }
-
-      if (subCommand === 'error' || subCommand === 'errors') {
-        const errorLogs = getLogsByLevel('error', 30)
-        console.log(`📋 Found ${errorLogs.length} error logs`)
-        const message = formatLogsForTelegram(errorLogs)
-        await sendMessage(chatId, message)
-        return { ok: true }
-      }
-
-      if (subCommand === 'warn' || subCommand === 'warnings') {
-        const warnLogs = getLogsByLevel('warn', 30)
-        console.log(`📋 Found ${warnLogs.length} warn logs`)
-        const message = formatLogsForTelegram(warnLogs)
-        await sendMessage(chatId, message)
-        return { ok: true }
-      }
-
-      // Попытка интерпретировать как количество минут
-      const minutes = parseInt(subCommand)
-      if (!isNaN(minutes) && minutes > 0) {
-        const timeLogs = getLogsByTime(minutes)
-        console.log(`📋 Found ${timeLogs.length} logs for last ${minutes} minutes`)
-        const message = formatLogsForTelegram(timeLogs)
-        await sendMessage(chatId, message)
-        return { ok: true }
-      }
-
-      // Попытка интерпретировать как количество записей
-      const count = parseInt(subCommand)
-      if (!isNaN(count) && count > 0) {
-        const recentLogs = getRecentLogs(Math.min(count, 50))
-        console.log(`📋 Found ${recentLogs.length} recent logs`)
-        const message = formatLogsForTelegram(recentLogs)
-        await sendMessage(chatId, message)
-        return { ok: true }
-      }
-    }
-
-    // По умолчанию показываем последние 20 логов
-    console.log('📋 Getting default 20 recent logs')
-    const recentLogs = getRecentLogs(20)
-    console.log(`📋 Found ${recentLogs.length} logs`)
-    
-    if (recentLogs.length === 0) {
-      await sendMessage(chatId, '📋 Логов пока нет. Логи появляются при работе бота (webhook, команды, кнопки).')
-      return { ok: true }
-    }
-    
-    const message = formatLogsForTelegram(recentLogs)
-    console.log(`📋 Formatted message length: ${message.length} chars`)
-    
-    if (message.length > 4096) {
-      // Если сообщение слишком длинное, разбиваем на части
-      const parts = message.match(/.{1,4000}/g) || []
-      console.log(`📋 Splitting into ${parts.length} parts`)
-      for (const part of parts) {
-        await sendMessage(chatId, part)
-        // Небольшая задержка между сообщениями
-        await new Promise(resolve => setTimeout(resolve, 100))
-      }
-    } else {
-      await sendMessage(chatId, message)
-    }
-    
-    return { ok: true }
-  } catch (error) {
-    console.error('❌ Error getting admin logs:', error)
-    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack')
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    await sendMessage(chatId, `❌ Ошибка получения логов: ${errorMsg}\n\nПроверьте консоль сервера для подробностей.`)
-    return { ok: true }
+    return await sendMessage({ chatId, text: '❌ Ошибка получения бронирований' })
   }
 }
 
@@ -282,11 +187,11 @@ export async function handleWebhookCheck(chatId: number) {
   try {
     const token = process.env.TELEGRAM_BOT_TOKEN
     if (!token) {
-      await sendMessage(chatId, '❌ TELEGRAM_BOT_TOKEN не настроен')
+      await sendMessage({ chatId, text: '❌ TELEGRAM_BOT_TOKEN не настроен' })
       return { ok: true }
     }
 
-    await sendMessage(chatId, '🔍 Проверяю webhook...')
+    await sendMessage({ chatId, text: '🔍 Проверяю webhook...' })
 
     const response = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`)
     const result = await response.json()
@@ -304,88 +209,21 @@ export async function handleWebhookCheck(chatId: number) {
 
 ${info.url ? '✅ Webhook настроен правильно' : '⚠️ Webhook не настроен. Используйте /admin для настройки.'}`
 
-      await sendMessage(chatId, message)
+      await sendMessage({ chatId, text: message })
     } else {
-      await sendMessage(chatId, `❌ Ошибка получения информации о webhook: ${result.description || 'Unknown error'}`)
+      await sendMessage({
+        chatId,
+        text: `❌ Ошибка получения информации о webhook: ${result.description || 'Unknown error'}`
+      })
     }
 
     return { ok: true }
   } catch (error) {
     console.error('Error checking webhook:', error)
-    await sendMessage(chatId, '❌ Ошибка проверки webhook: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    return { ok: true }
-  }
-}
-
-// Тест кнопок
-export async function handleTestButtons(chatId: number) {
-  try {
-    await sendMessage(chatId, '🧪 Отправляю тестовое сообщение с кнопками...')
-
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) {
-      await sendMessage(chatId, '❌ TELEGRAM_BOT_TOKEN не настроен')
-      return { ok: true }
-    }
-
-    const testBookingId = '00000000-0000-0000-0000-000000000001'
-    const bookingType = 'regular'
-    const confirmData = `${bookingType}:confirm:${testBookingId}`
-    const cancelData = `${bookingType}:cancel:${testBookingId}`
-
-    const message = `🧪 <b>ТЕСТ КНОПОК</b>
-
-Это тестовое сообщение для проверки работы инлайн кнопок.
-
-🆔 <b>Booking ID:</b> <code>${testBookingId}</code>
-📋 <b>Тип:</b> Обычное бронирование
-
-<b>Инструкция:</b>
-1. Нажмите на кнопку "✅ Подтвердить (тест)"
-2. Если кнопка работает:
-   - "Часики" исчезнут сразу
-   - Сообщение обновится через 1-2 секунды
-   - Кнопки исчезнут, появится статус
-3. Если не работает - проверьте логи командой /adminlogs`
-
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '✅ Подтвердить (тест)',
-                callback_data: confirmData
-              },
-              {
-                text: '❌ Отменить (тест)',
-                callback_data: cancelData
-              }
-            ]
-          ]
-        }
-      })
+    await sendMessage({
+      chatId,
+      text: '❌ Ошибка проверки webhook: ' + (error instanceof Error ? error.message : 'Unknown error')
     })
-
-    const result = await response.json()
-
-    if (result.ok) {
-      await sendMessage(chatId, '✅ Тестовое сообщение отправлено! Нажмите на кнопки выше.')
-    } else {
-      await sendMessage(chatId, `❌ Ошибка отправки: ${result.description || 'Unknown error'}`)
-    }
-
-    return { ok: true }
-  } catch (error) {
-    console.error('Error in test buttons:', error)
-    await sendMessage(chatId, '❌ Ошибка тестирования кнопок: ' + (error instanceof Error ? error.message : 'Unknown error'))
     return { ok: true }
   }
 }
@@ -393,7 +231,7 @@ export async function handleTestButtons(chatId: number) {
 // Отправка напоминаний
 export async function handleSendReminders(chatId: number, event: any) {
   try {
-    await sendMessage(chatId, '📤 Отправляю напоминания...')
+    await sendMessage({ chatId, text: '📤 Отправляю напоминания...' })
 
     // Вызываем API напоминаний
     const response = await fetch(`${getBaseUrl(event)}/api/telegram/reminders`, {
@@ -406,13 +244,13 @@ export async function handleSendReminders(chatId: number, event: any) {
     const result = await response.json()
 
     if (result.status === 200) {
-      await sendMessage(chatId, `✅ ${result.body.message}`)
+      await sendMessage({ chatId, text: `✅ ${result.body.message}` })
     } else {
-      await sendMessage(chatId, '❌ Ошибка отправки напоминаний')
+      await sendMessage({ chatId, text: '❌ Ошибка отправки напоминаний' })
     }
   } catch (error) {
     console.error('Error sending reminders:', error)
-    await sendMessage(chatId, '❌ Ошибка отправки напоминаний')
+    await sendMessage({ chatId, text: '❌ Ошибка отправки напоминаний' })
   }
 }
 
@@ -421,29 +259,4 @@ function getBaseUrl(event: any): string {
   const host = event.node.req.headers.host
   const protocol = event.node.req.headers['x-forwarded-proto'] || 'http'
   return `${protocol}://${host}`
-}
-
-// Функция для отправки сообщения
-export async function sendMessage(chatId: number, text: string) {
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) return false
-
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: 'HTML'
-      })
-    })
-
-    return response.ok
-  } catch (error) {
-    console.error('Error sending message:', error)
-    return false
-  }
 }

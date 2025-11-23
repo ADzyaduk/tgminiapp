@@ -2,8 +2,10 @@
  * Утилиты для работы с уведомлениями Telegram
  */
 
-import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
+import { serverSupabaseServiceRole } from '#supabase/server'
 import { H3Event } from 'h3'
+import { buildCallbackData, sendMessage } from '~/server/utils/telegram-client'
+import type { InlineKeyboardMarkup } from '~/server/utils/telegram-client'
 
 /**
  * Форматирует уведомление о новом бронировании
@@ -105,6 +107,86 @@ ID: ${booking.id}
 Стоимость: ${booking.total_price} ₽`
 }
 
+type BookingActionType = 'regular' | 'group_trip'
+type ParseMode = 'HTML' | 'Markdown' | 'MarkdownV2'
+
+function getWebAppBaseUrl () {
+  return (process.env.TELEGRAM_WEBAPP_URL || '').replace(/\/$/, '')
+}
+
+function shouldUseAppLinks () {
+  return process.env.TELEGRAM_USE_APP_LINKS === 'true'
+}
+
+function buildBookingActionKeyboard(
+  bookingId?: string,
+  bookingType: BookingActionType = 'regular'
+): InlineKeyboardMarkup | undefined {
+  if (!bookingId) return undefined
+
+  const useLinks = shouldUseAppLinks()
+  const baseUrl = getWebAppBaseUrl()
+
+  if (useLinks && baseUrl) {
+    const confirmUrl = `${baseUrl}/admin/bookings?action=confirm&id=${bookingId}&type=${bookingType}`
+    const cancelUrl = `${baseUrl}/admin/bookings?action=cancel&id=${bookingId}&type=${bookingType}`
+
+    console.log('🔗 Creating app-link buttons for booking', bookingId)
+
+    return {
+      inline_keyboard: [
+        [
+          { text: '✅ Подтвердить', url: confirmUrl },
+          { text: '❌ Отменить', url: cancelUrl }
+        ]
+      ]
+    }
+  }
+
+  if (useLinks && !baseUrl) {
+    console.warn('⚠️ TELEGRAM_WEBAPP_URL missing, fallback to callback buttons')
+  }
+
+  const confirmData = buildCallbackData(bookingType, 'confirm', bookingId)
+  const cancelData = buildCallbackData(bookingType, 'cancel', bookingId)
+
+  console.log('🔘 Creating callback buttons for booking', bookingId)
+
+  return {
+    inline_keyboard: [
+      [
+        { text: '✅ Подтвердить', callback_data: confirmData },
+        { text: '❌ Отменить', callback_data: cancelData }
+      ]
+    ]
+  }
+}
+
+type DeliverMessageOptions = {
+  chatId: number | string
+  text: string
+  parseMode?: ParseMode
+  replyMarkup?: InlineKeyboardMarkup
+}
+
+async function deliverMessage (options: DeliverMessageOptions) {
+  const { chatId, text, parseMode = 'HTML', replyMarkup } = options
+
+  try {
+    const result = await sendMessage({
+      chatId,
+      text,
+      parseMode,
+      replyMarkup
+    })
+
+    return Boolean(result)
+  } catch (error) {
+    console.error('❌ Telegram delivery error:', error)
+    return false
+  }
+}
+
 /**
  * Отправляет уведомление клиенту о смене статуса групповой поездки
  */
@@ -154,36 +236,19 @@ export async function sendGroupTripStatusNotification(
 
 ${status === 'cancelled' ? '😞 <i>Приносим извинения за отмену!</i>' : '🎉 <i>Спасибо за ваш выбор!</i>'}`
 
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) {
-      console.error('Telegram token not configured')
-      return false
-    }
+  const sent = await deliverMessage({
+    chatId: booking.profile.telegram_id,
+    text: message,
+    parseMode: 'HTML'
+  })
 
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: booking.profile.telegram_id,
-        text: message,
-        parse_mode: 'HTML'
-      })
-    })
-
-    if (response.ok) {
-      console.log(`✅ Sent group trip status notification to client: ${booking.profile.telegram_id}`)
-      return true
-    } else {
-      console.error(`❌ Failed to send group trip status notification to client: ${booking.profile.telegram_id}`)
-      return false
-    }
-  } catch (error) {
-    console.error('Error sending group trip status notification to client:', error)
-    return false
+  if (sent) {
+    console.log(`✅ Sent group trip status notification to client: ${booking.profile.telegram_id}`)
+  } else {
+    console.error(`❌ Failed to send group trip status notification to client: ${booking.profile.telegram_id}`)
   }
+
+  return sent
 }
 
 /**
@@ -202,112 +267,27 @@ export async function sendAdminNotification(
   const { parseMode = 'HTML', boatId, bookingId, bookingType = 'regular', event } = options
 
   try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-
-    if (!token) {
-      console.error('Telegram token not configured')
-      return false
+    const replyMarkup = buildBookingActionKeyboard(bookingId, bookingType)
+    const sendToChat = async (chatId: string | number) => {
+      return await deliverMessage({
+        chatId,
+        text: message,
+        parseMode,
+        replyMarkup
+      })
     }
 
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    // Создаем инлайн кнопки для бронирований
-    // Можно использовать либо кнопки с callback_data, либо ссылки в приложение
-    let replyMarkup = undefined
-    if (bookingId && bookingType) {
-      // Проверяем, включен ли режим ссылок (если кнопки не работают)
-      const useAppLinks = process.env.TELEGRAM_USE_APP_LINKS === 'true'
-      
-      if (useAppLinks) {
-        // Режим со ссылками в приложение
-        const webAppUrl = process.env.TELEGRAM_WEBAPP_URL || ''
-        const confirmUrl = `${webAppUrl}/admin/bookings?action=confirm&id=${bookingId}&type=${bookingType}`
-        const cancelUrl = `${webAppUrl}/admin/bookings?action=cancel&id=${bookingId}&type=${bookingType}`
-        
-        console.log(`🔗 Creating app link buttons:`)
-        console.log(`   ✅ Confirm: ${confirmUrl}`)
-        console.log(`   ❌ Cancel: ${cancelUrl}`)
-        
-        replyMarkup = {
-          inline_keyboard: [
-            [
-              {
-                text: '✅ Подтвердить',
-                url: confirmUrl
-              },
-              {
-                text: '❌ Отменить',
-                url: cancelUrl
-              }
-            ]
-          ]
-        }
-      } else {
-        // Режим с callback кнопками (по умолчанию)
-        // Ограничиваем длину callback_data до 64 байт согласно документации Telegram
-        // Формат: bookingType:action:bookingId
-        const confirmData = `${bookingType}:confirm:${bookingId}`
-        const cancelData = `${bookingType}:cancel:${bookingId}`
-        
-        // Проверяем длину в байтах (не символах!)
-        const getByteLength = (str: string) => new TextEncoder().encode(str).length
-        const confirmBytes = getByteLength(confirmData)
-        const cancelBytes = getByteLength(cancelData)
-        
-        // Обрезаем до 64 байт если нужно
-        let finalConfirmData = confirmData
-        let finalCancelData = cancelData
-        
-        if (confirmBytes > 64) {
-          // Обрезаем bookingId если нужно
-          const maxBookingIdLength = 64 - `${bookingType}:confirm:`.length
-          const truncatedId = bookingId.substring(0, maxBookingIdLength)
-          finalConfirmData = `${bookingType}:confirm:${truncatedId}`
-          console.warn(`⚠️ Confirm callback_data too long (${confirmBytes} bytes), truncated to: ${finalConfirmData}`)
-        }
-        
-        if (cancelBytes > 64) {
-          const maxBookingIdLength = 64 - `${bookingType}:cancel:`.length
-          const truncatedId = bookingId.substring(0, maxBookingIdLength)
-          finalCancelData = `${bookingType}:cancel:${truncatedId}`
-          console.warn(`⚠️ Cancel callback_data too long (${cancelBytes} bytes), truncated to: ${finalCancelData}`)
-        }
-
-        console.log(`🔘 Creating inline buttons:`)
-        console.log(`   ✅ Confirm: ${finalConfirmData} (${getByteLength(finalConfirmData)} bytes)`)
-        console.log(`   ❌ Cancel: ${finalCancelData} (${getByteLength(finalCancelData)} bytes)`)
-
-        replyMarkup = {
-          inline_keyboard: [
-            [
-              {
-                text: '✅ Подтвердить',
-                callback_data: finalConfirmData
-              },
-              {
-                text: '❌ Отменить',
-                callback_data: finalCancelData
-              }
-            ]
-          ]
-        }
-      }
-    }
-
-    // Сначала пытаемся отправить менеджерам лодки, если указан boatId
     let sentToManagers = false
+
     if (boatId && event) {
       try {
         const supabase = serverSupabaseServiceRole(event)
-
-        // Получаем менеджеров этой лодки
         const { data: managers } = await supabase
           .from('boat_managers')
           .select('user_id')
           .eq('boat_id', boatId)
 
         if (managers && managers.length > 0) {
-          // Получаем Telegram ID менеджеров
           const { data: profiles } = await supabase
             .from('profiles')
             .select('telegram_id')
@@ -315,31 +295,9 @@ export async function sendAdminNotification(
             .not('telegram_id', 'is', null)
 
           if (profiles && profiles.length > 0) {
-            // Отправляем уведомление каждому менеджеру с кнопками
             const results = await Promise.all(
               profiles.map(async (profile: any) => {
-                try {
-                  const body: any = {
-                    chat_id: profile.telegram_id,
-                    text: message,
-                    parse_mode: parseMode
-                  }
-
-                  if (replyMarkup) {
-                    body.reply_markup = replyMarkup
-                  }
-
-                  const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                  })
-
-                  return response.ok
-                } catch (error) {
-                  console.error(`Failed to send notification to manager ${profile.telegram_id}:`, error)
-                  return false
-                }
+                return await sendToChat(profile.telegram_id)
               })
             )
 
@@ -352,43 +310,26 @@ export async function sendAdminNotification(
       }
     }
 
-    // Если не удалось отправить менеджерам или нет менеджеров, отправляем админу
-    if (!sentToManagers) {
-      const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID === "ваш_chat_id_для_уведомлений"
-        ? "1231157381"  // Реальный chat ID из логов
-        : (process.env.TELEGRAM_ADMIN_CHAT_ID || "1231157381")
-
-      console.log(`📤 Sending notification to admin chat ID: ${adminChatId}`)
-      console.log(`📝 Message: ${message.substring(0, 100)}...`)
-
-      const body: any = {
-        chat_id: adminChatId,
-        text: message,
-        parse_mode: parseMode
-      }
-
-      if (replyMarkup) {
-        console.log(`🔘 Adding buttons: ${JSON.stringify(replyMarkup)}`)
-        body.reply_markup = replyMarkup
-      }
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-
-      const result = response.ok
-      if (!result) {
-        const errorData = await response.json()
-        console.error(`❌ Admin notification failed:`, errorData)
-      } else {
-        console.log(`✅ Admin notification sent successfully`)
-      }
-      return result
+    if (sentToManagers) {
+      return true
     }
 
-    return sentToManagers
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID === 'ваш_chat_id_для_уведомлений'
+      ? '1231157381'
+      : (process.env.TELEGRAM_ADMIN_CHAT_ID || '1231157381')
+
+    console.log(`📤 Sending notification to admin chat ID: ${adminChatId}`)
+    console.log(`📝 Message: ${message.substring(0, 100)}...`)
+
+    const sentToAdmin = await sendToChat(adminChatId)
+
+    if (!sentToAdmin) {
+      console.error('❌ Admin notification failed')
+    } else {
+      console.log('✅ Admin notification sent successfully')
+    }
+
+    return sentToAdmin
   } catch (error) {
     console.error('Failed to send admin notification:', error)
     return false
@@ -428,34 +369,13 @@ export async function sendBoatManagersNotification(
       return false
     }
 
-    // Отправляем сообщение каждому менеджеру
-    const token = process.env.TELEGRAM_BOT_TOKEN
-
-    if (!token) {
-      console.error('Telegram token not configured')
-      return false
-    }
-
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
     const results = await Promise.all(
       profiles.map(async (profile: any) => {
-        try {
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: profile.telegram_id,
-              text: message,
-              parse_mode: parseMode
-            })
-          })
-
-          return response.ok
-        } catch (error) {
-          console.error(`Failed to send notification to manager ${profile.telegram_id}:`, error)
-          return false
-        }
+        return await deliverMessage({
+          chatId: profile.telegram_id,
+          text: message,
+          parseMode
+        })
       })
     )
 
@@ -534,36 +454,19 @@ ${config.description}
 
 ${status === 'confirmed' ? '🎉 <i>Хорошего отдыха!</i>' : status === 'cancelled' ? '📞 <i>При вопросах обращайтесь к администратору</i>' : '⏰ <i>Мы свяжемся с вами в ближайшее время</i>'}`
 
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) {
-      console.error('Telegram token not configured')
-      return false
-    }
+  const sent = await deliverMessage({
+    chatId: booking.profile.telegram_id,
+    text: message,
+    parseMode: 'HTML'
+  })
 
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: booking.profile.telegram_id,
-        text: message,
-        parse_mode: 'HTML'
-      })
-    })
-
-    if (response.ok) {
-      console.log(`✅ Sent status notification to client: ${booking.profile.telegram_id}`)
-      return true
-    } else {
-      console.error(`❌ Failed to send status notification to client: ${booking.profile.telegram_id}`)
-      return false
-    }
-  } catch (error) {
-    console.error('Error sending status notification to client:', error)
-    return false
+  if (sent) {
+    console.log(`✅ Sent status notification to client: ${booking.profile.telegram_id}`)
+  } else {
+    console.error(`❌ Failed to send status notification to client: ${booking.profile.telegram_id}`)
   }
+
+  return sent
 }
 
 /**
@@ -604,36 +507,19 @@ export async function sendClientBookingConfirmation(booking: any): Promise<boole
 
 ⏳ <i>Ваше бронирование ожидает подтверждения менеджера. Мы свяжемся с вами в ближайшее время!</i>`
 
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) {
-      console.error('Telegram token not configured')
-      return false
-    }
+  const sent = await deliverMessage({
+    chatId: booking.profile.telegram_id,
+    text: message,
+    parseMode: 'HTML'
+  })
 
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: booking.profile.telegram_id,
-        text: message,
-        parse_mode: 'HTML'
-      })
-    })
-
-    if (response.ok) {
-      console.log(`✅ Sent booking confirmation to client: ${booking.profile.telegram_id}`)
-      return true
-    } else {
-      console.error(`❌ Failed to send booking confirmation to client: ${booking.profile.telegram_id}`)
-      return false
-    }
-  } catch (error) {
-    console.error('Error sending booking confirmation to client:', error)
-    return false
+  if (sent) {
+    console.log(`✅ Sent booking confirmation to client: ${booking.profile.telegram_id}`)
+  } else {
+    console.error(`❌ Failed to send booking confirmation to client: ${booking.profile.telegram_id}`)
   }
+
+  return sent
 }
 
 /**
@@ -716,27 +602,11 @@ export async function sendBookingReminder(booking: any, hoursUntil: number): Pro
 
 🎯 <i>Не забудьте подготовиться к поездке!</i>`
 
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) return false
-
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: booking.profile.telegram_id,
-        text: message,
-        parse_mode: 'HTML'
-      })
-    })
-
-    return response.ok
-  } catch (error) {
-    console.error('Error sending booking reminder:', error)
-    return false
-  }
+  return await deliverMessage({
+    chatId: booking.profile.telegram_id,
+    text: message,
+    parseMode: 'HTML'
+  })
 }
 
 /**
@@ -776,36 +646,19 @@ export async function sendGroupTripBookingConfirmation(booking: any): Promise<bo
 
 ✅ <i>Встретимся в назначенное время! Групповая поездка начнется точно по расписанию.</i>`
 
-  try {
-    const token = process.env.TELEGRAM_BOT_TOKEN
-    if (!token) {
-      console.error('Telegram token not configured')
-      return false
-    }
+  const sent = await deliverMessage({
+    chatId: booking.profile.telegram_id,
+    text: message,
+    parseMode: 'HTML'
+  })
 
-    const apiUrl = `https://api.telegram.org/bot${token}/sendMessage`
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: booking.profile.telegram_id,
-        text: message,
-        parse_mode: 'HTML'
-      })
-    })
-
-    if (response.ok) {
-      console.log(`✅ Sent group trip confirmation to client: ${booking.profile.telegram_id}`)
-      return true
-    } else {
-      console.error(`❌ Failed to send group trip confirmation to client: ${booking.profile.telegram_id}`)
-      return false
-    }
-  } catch (error) {
-    console.error('Error sending group trip confirmation to client:', error)
-    return false
+  if (sent) {
+    console.log(`✅ Sent group trip confirmation to client: ${booking.profile.telegram_id}`)
+  } else {
+    console.error(`❌ Failed to send group trip confirmation to client: ${booking.profile.telegram_id}`)
   }
+
+  return sent
 }
 
 /**

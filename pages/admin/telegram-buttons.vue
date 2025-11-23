@@ -31,31 +31,28 @@
                 </div>
             </UCard>
 
-            <!-- Send Test Notification -->
+            <!-- Button Troubleshooting -->
             <UCard>
                 <template #header>
-                    <h2 class="text-xl font-semibold">Тестовое уведомление с кнопками</h2>
+                    <h2 class="text-xl font-semibold">Проверка инлайн-кнопок</h2>
                 </template>
 
-                <div class="space-y-4">
-                    <UFormField label="Chat ID (ваш Telegram ID)">
-                        <UInput v-model="testChatId" placeholder="1396986028" />
-                    </UFormField>
-
-                    <UFormField label="Тип бронирования">
-                        <USelect v-model="testBookingType" :options="[
-                            { label: 'Обычное бронирование', value: 'regular' },
-                            { label: 'Групповая поездка', value: 'group_trip' }
-                        ]" />
-                    </UFormField>
-
-                    <UFormField label="Test Booking ID">
-                        <UInput v-model="testBookingId" placeholder="123e4567-e89b-12d3-a456-426614174000" />
-                    </UFormField>
-
-                    <UButton color="primary" :loading="isSendingTest" @click="sendTestNotification">
-                        Отправить тестовое уведомление
-                    </UButton>
+                <div class="space-y-4 text-sm text-gray-700">
+                    <p>
+                        Чтобы протестировать подтверждение/отмену бронирований, отправьте реальное уведомление менеджеру
+                        или админу. Для этого создайте бронирование в приложении и убедитесь, что у менеджера заполнен
+                        Telegram ID.
+                    </p>
+                    <ol class="list-decimal list-inside space-y-2">
+                        <li>Создайте бронирование (обычное или групповое) в административной панели.</li>
+                        <li>Проверьте, что уведомление пришло в Telegram с кнопками «Подтвердить» и «Отменить».</li>
+                        <li>Нажмите кнопку и убедитесь, что статус обновился в UI и в базе данных.</li>
+                        <li>Если кнопки не работают, включите fallback через переменную <code>TELEGRAM_USE_APP_LINKS=true</code>.</li>
+                    </ol>
+                    <p>
+                        Все ошибки теперь доступны в логах сервера (pm2 / docker / терминал). Подробная инструкция —
+                        в файле <code>docs/telegram.md</code>.
+                    </p>
                 </div>
             </UCard>
         </div>
@@ -98,14 +95,14 @@
                         <strong>Проверьте webhook:</strong> Нажмите "Проверить Webhook" чтобы убедиться,
                         что webhook настроен правильно
                     </li>
-                    <li>
-                        <strong>Отправьте тестовое уведомление:</strong> Введите ваш Telegram Chat ID
-                        и ID существующего бронирования, затем отправьте тест
-                    </li>
-                    <li>
-                        <strong>Тестируйте кнопки:</strong> В полученном сообщении нажмите кнопки
-                        "Подтвердить" или "Отменить" и проверьте, что статус обновляется в базе данных
-                    </li>
+                        <li>
+                            <strong>Создайте бронирование:</strong> вручную или через Mini App и дождитесь уведомления
+                            в Telegram
+                        </li>
+                        <li>
+                            <strong>Тестируйте кнопки:</strong> в полученном сообщении нажмите "Подтвердить" или
+                            "Отменить" и проверьте, что статус обновился
+                        </li>
                 </ol>
 
                 <div class="mt-4 p-4 bg-blue-50 rounded">
@@ -129,9 +126,6 @@ import { ref } from 'vue'
 // State
 const webhookUrl = ref('')
 const webhookInfo = ref(null)
-const testChatId = ref('1396986028')
-const testBookingId = ref('')
-const testBookingType = ref('regular')
 const results = ref<Array<{
     action: string
     message: string
@@ -141,7 +135,6 @@ const results = ref<Array<{
 
 const isSettingWebhook = ref(false)
 const isGettingInfo = ref(false)
-const isSendingTest = ref(false)
 
 // Methods
 const setWebhook = async () => {
@@ -180,37 +173,6 @@ const getWebhookInfo = async () => {
         addResult('Получение информации', 'Ошибка запроса', false, error.message)
     } finally {
         isGettingInfo.value = false
-    }
-}
-
-const sendTestNotification = async () => {
-    if (!testChatId.value || !testBookingId.value) {
-        addResult('Тестовое уведомление', 'Не указан Chat ID или Booking ID', false)
-        return
-    }
-
-    try {
-        isSendingTest.value = true
-
-        // Отправляем тестовое уведомление
-        const response: any = await $fetch('/api/telegram/test-buttons', {
-            method: 'POST',
-            body: {
-                chat_id: testChatId.value,
-                booking_id: testBookingId.value,
-                booking_type: testBookingType.value
-            }
-        })
-
-        if (response.success) {
-            addResult('Тестовое уведомление', 'Уведомление отправлено успешно', true)
-        } else {
-            addResult('Тестовое уведомление', response.error, false)
-        }
-    } catch (error: any) {
-        addResult('Тестовое уведомление', 'Ошибка отправки', false, error.message)
-    } finally {
-        isSendingTest.value = false
     }
 }
 

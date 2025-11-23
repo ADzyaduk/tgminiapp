@@ -75,8 +75,8 @@ export const ADMIN_COMMANDS = [
     description: 'Отправить напоминания'
   },
   {
-    command: 'adminlogs',
-    description: 'Просмотр логов бота'
+    command: 'adminwebhook',
+    description: 'Проверка webhook'
   }
 ]
 

@@ -2,8 +2,6 @@ import { defineEventHandler, getQuery, setResponseStatus } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/supabase'
-import { addLog } from '~/server/utils/telegram-logs'
-
 /**
  * API endpoint для обработки изменения статуса бронирования через ссылку из Telegram
  * Используется когда кнопки не работают и вместо них используются ссылки в приложение
@@ -78,11 +76,7 @@ export default defineEventHandler(async (event: H3Event) => {
       const { sendClientStatusNotification } = await import('~/server/utils/telegram-notifications')
       await sendClientStatusNotification(updatedBooking as any, newStatus)
 
-      addLog('success', `Booking ${bookingId} updated to ${newStatus} via app link`, { 
-        bookingId, 
-        action, 
-        newStatus 
-      })
+      console.log(`✅ Booking ${bookingId} updated to ${newStatus} via app link`)
 
       return { 
         success: true, 
@@ -130,11 +124,7 @@ export default defineEventHandler(async (event: H3Event) => {
       const { sendGroupTripStatusNotification } = await import('~/server/utils/telegram-notifications')
       await sendGroupTripStatusNotification(updatedBooking as any, newStatus)
 
-      addLog('success', `Group trip booking ${bookingId} updated to ${newStatus} via app link`, { 
-        bookingId, 
-        action, 
-        newStatus 
-      })
+      console.log(`✅ Group trip booking ${bookingId} updated to ${newStatus} via app link`)
 
       return { 
         success: true, 
@@ -148,7 +138,6 @@ export default defineEventHandler(async (event: H3Event) => {
 
   } catch (error: any) {
     console.error('❌ Error processing booking action via app link:', error)
-    addLog('error', 'Error processing booking action via app link', { error: error.message })
     setResponseStatus(event, 500)
     return { success: false, error: 'Внутренняя ошибка сервера' }
   }
