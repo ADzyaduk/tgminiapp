@@ -71,7 +71,7 @@
                         </span>
                         <span v-else class="ml-1 text-muted">Нет отзывов</span>
                       </div>
-                      
+
                       <div v-if="boat.tags?.length" class="flex flex-wrap gap-2 mt-2">
                         <UBadge
                           v-for="tag in boat.tags"
@@ -89,15 +89,18 @@
                 <div class="p-4">
                   <div class="grid grid-cols-1 gap-4">
                     <!-- Основное изображение -->
-                    <div class="relative h-48 rounded-lg overflow-hidden">
+                    <div class="relative h-48 rounded-lg overflow-hidden" :class="boat.slug?.toLowerCase() === 'volna' ? 'bg-gray-100 dark:bg-gray-800' : ''">
                       <img
                         :src="getBoatImage(boat)"
                         :alt="boat.name || 'Фото лодки'"
-                        class="w-full h-full object-cover"
+                        :class="[
+                          'w-full h-full',
+                          boat.slug?.toLowerCase() === 'volna' ? 'object-contain' : 'object-cover'
+                        ]"
                         loading="lazy"
                       />
                     </div>
-                    
+
                     <!-- Цена и детали -->
                     <div class="space-y-3">
                       <div>
@@ -125,7 +128,7 @@
             </div>
           </div>
         </div>
-        
+
         <!-- Контент вкладки "Групповые поездки" -->
         <div v-else-if="item.id === 'groups'">
           <ClientOnly>
@@ -166,7 +169,7 @@ const tabs = [
 ]
 
 // Преобразуем массив tabs в формат, ожидаемый UTabs компонентом
-const tabItems = computed(() => 
+const tabItems = computed(() =>
   tabs.map(tab => ({
     label: tab.name,
     icon: tab.icon,
@@ -194,33 +197,33 @@ async function fetchBoats() {
       .order('created_at', { ascending: false })
 
     if (error) throw error
-    
+
     // Обработка данных и добавление информации о рейтинге
     boats.value = (data || []).map((boat: any) => {
       // Рассчитываем средний рейтинг для лодки
       const reviews = boat.reviews || [];
       let averageRating = 0;
       let totalReviews = 0;
-      
+
       if (reviews.length > 0) {
         const sum = reviews.reduce((acc: number, review: any) => acc + (review.rating || 0), 0);
         averageRating = sum / reviews.length;
         totalReviews = reviews.length;
       }
-      
+
       // Создаем новый объект с дополнительными полями
       const boatWithRating = {
         ...boat,
         averageRating,
         totalReviews
       };
-      
+
       // Удаляем полные данные отзывов, чтобы не перегружать объект
       delete boatWithRating.reviews;
-      
+
       return boatWithRating;
     });
-    
+
   } catch (err: any) {
     console.error('Error loading boats:', err)
     errorMessage.value = err.message || 'Не удалось загрузить лодки'
@@ -254,12 +257,12 @@ function getBoatImage(boat: any) {
     const { primary } = useBoatImages(boat);
     if (primary.value) return primary.value;
   }
-  
+
   // Запасной вариант - если есть массив images в данных лодки
   if (boat.images && boat.images.length > 0) {
     return boat.images[0];
   }
-  
+
   return '/images/default-boat.jpg';
 }
 

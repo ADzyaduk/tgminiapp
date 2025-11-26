@@ -25,7 +25,7 @@
           <div v-else class="mt-1 h-5"> <!-- Placeholder for loading state -->
              <USkeleton class="h-4 w-32" />
           </div>
-          
+
           <div v-if="boat?.tags?.length" class="flex flex-wrap gap-2 mt-2">
             <UBadge
               v-for="tag in boat.tags"
@@ -55,18 +55,18 @@
             @load="onImageLoad"
             @click="toggleImageFit"
           />
-          
+
           <!-- Индикатор режима просмотра и отладочная информация -->
           <div class="absolute top-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
             <div>{{ imageFitMode === 'cover' ? 'Обрезка' : 'Полное' }}</div>
             <div v-if="imageAspectRatio" class="text-xs opacity-75">
-              {{ imageAspectRatio.toFixed(2) }} 
+              {{ imageAspectRatio.toFixed(2) }}
               {{ imageAspectRatio < 1 ? '📱' : imageAspectRatio > 1.5 ? '🖼️' : '⬜' }}
             </div>
           </div>
-          
 
-          
+
+
           <!-- Кнопка переключения режима -->
           <button
             @click="toggleImageFit"
@@ -79,21 +79,21 @@
         <div v-else class="relative h-64 md:h-72 rounded-lg overflow-hidden bg-muted flex items-center justify-center">
           <UIcon name="i-heroicons-photo" class="text-muted w-16 h-16" />
         </div>
-        
+
         <!-- Миниатюры галереи, если есть несколько изображений -->
         <div v-if="images.length > 1" class="flex flex-wrap gap-2 overflow-x-auto py-1">
-          <div 
-            v-for="(img, index) in images" 
+          <div
+            v-for="(img, index) in images"
             :key="index"
             class="relative w-16 h-16 rounded-md overflow-hidden cursor-pointer flex-shrink-0 border-2 hover:border-primary-300 transition-colors"
             :class="currentImage === img ? 'border-primary-500' : 'border-transparent'"
             @click="selectThumbnail(img)"
           >
-            <img 
-              :src="img" 
-              :alt="`${boat?.name} фото ${index + 1}`" 
-              class="w-full h-full object-cover hover:scale-105 transition-transform" 
-              loading="lazy" 
+            <img
+              :src="img"
+              :alt="`${boat?.name} фото ${index + 1}`"
+              class="w-full h-full object-cover hover:scale-105 transition-transform"
+              loading="lazy"
             />
           </div>
         </div>
@@ -162,7 +162,9 @@ const isLoadingRating = ref(true)
 
 // Состояние
 const currentImage = ref<string | null>(null)
-const imageFitMode = ref<'cover' | 'contain'>('cover')
+// Для лодки "волна" используем contain по умолчанию, чтобы не обрезать изображение
+const defaultFitMode = props.boat?.slug?.toLowerCase() === 'volna' ? 'contain' : 'cover'
+const imageFitMode = ref<'cover' | 'contain'>(defaultFitMode)
 const imageAspectRatio = ref<number | null>(null)
 const mainImage = ref<HTMLImageElement | null>(null)
 
@@ -188,7 +190,7 @@ const userPrice = computed(() => {
   // Безопасно извлекаем цены с проверкой на undefined/null
   const regularPrice = Number(props.boat?.price || 0)
   const agentPrice = Number(props.boat?.agent_price || 0)
-  
+
   const price = isAgentOrAdmin.value ? agentPrice : regularPrice
   return format(price)
 })
@@ -196,18 +198,18 @@ const userPrice = computed(() => {
 // Computed для класса отображения изображения
 const imageDisplayClass = computed(() => {
   const baseClasses = []
-  
+
   if (imageFitMode.value === 'contain') {
     baseClasses.push('object-contain')
     // Для contain добавляем фон чтобы не было пустого пространства
     baseClasses.push('bg-gray-100 dark:bg-gray-800')
   } else {
     baseClasses.push('object-cover')
-    
+
     // Используем анализатор для оптимального позиционирования
     if (imageAspectRatio.value) {
       const debugInfo = formatDebugInfo(
-        mainImage.value?.naturalWidth || 0, 
+        mainImage.value?.naturalWidth || 0,
         mainImage.value?.naturalHeight || 0
       )
       baseClasses.push(debugInfo.position)
@@ -215,9 +217,9 @@ const imageDisplayClass = computed(() => {
       baseClasses.push('object-center')
     }
   }
-  
+
   baseClasses.push('cursor-pointer')
-  
+
   return baseClasses.join(' ')
 })
 
@@ -280,12 +282,16 @@ function onImageLoad() {
   if (mainImage.value) {
     const { naturalWidth, naturalHeight } = mainImage.value
     imageAspectRatio.value = naturalWidth / naturalHeight
-    
-    // Используем анализатор для автоматического выбора режима
-    const recommendation = recommendDisplayMode(imageAspectRatio.value)
-    imageFitMode.value = recommendation.mode
-    
 
+    // Для лодки "волна" всегда используем contain, чтобы не обрезать изображение
+    const isVolna = props.boat?.slug?.toLowerCase() === 'volna'
+    if (isVolna) {
+      imageFitMode.value = 'contain'
+    } else {
+      // Используем анализатор для автоматического выбора режима для других лодок
+      const recommendation = recommendDisplayMode(imageAspectRatio.value)
+      imageFitMode.value = recommendation.mode
+    }
   }
 }
 
@@ -301,7 +307,9 @@ function selectThumbnail(img: string) {
 
 // Watch для сброса настроек при смене изображения
 watch(currentImage, () => {
-  imageFitMode.value = 'cover'
+  // Для лодки "волна" сохраняем contain режим
+  const isVolna = props.boat?.slug?.toLowerCase() === 'volna'
+  imageFitMode.value = isVolna ? 'contain' : 'cover'
   imageAspectRatio.value = null
 }, { immediate: true })
 
